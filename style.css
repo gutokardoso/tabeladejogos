@@ -112,8 +112,14 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
 .sync-status[data-type="loading"] { color: #8fd0ff; }
 
 .match-card.live {
-  border-color: rgba(117,255,183,.55);
-  box-shadow: 0 0 32px rgba(117,255,183,.12);
+  background: #005122;
+  border-color: rgba(117,255,183,.65);
+  box-shadow: 0 0 32px rgba(117,255,183,.18);
+}
+
+.match-card.live .match-top span {
+  color: #75ffb7;
+  font-weight: 900;
 }
 
 .match-card.live .match-top span::before {

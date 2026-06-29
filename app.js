@@ -20,6 +20,18 @@ function isLive(match) {
   return /live|in progress|intervalo|1º|2º|andamento/i.test(match.status || '');
 }
 
+function minutesUntilKickoff(match) {
+  const kickoff = new Date(match.date);
+  if (Number.isNaN(kickoff.getTime())) return Infinity;
+  return (kickoff.getTime() - Date.now()) / 60000;
+}
+
+function shouldShowLiveHighlight(match) {
+  if (isFinished(match)) return false;
+  const minutes = minutesUntilKickoff(match);
+  return isLive(match) || (minutes <= 30 && minutes >= 0);
+}
+
 function teamBase(team) {
   const t = liveData.teams[team] || COPA_DATA.teams[normalizeTeamName(team)] || { rating: 70, market: 70, tradition: 70, fifa: 80 };
   return (t.rating * 0.48) + (t.market * 0.24) + (t.tradition * 0.18) + ((120 - t.fifa) * 0.10);
@@ -61,14 +73,24 @@ function translateStatus(status = '') {
 
 function translateStage(stage = '') {
   const raw = String(stage || '').trim();
+  const normalized = raw.toLowerCase().replaceAll('-', ' ');
   const map = {
-    'fifa.world': 'Copa do Mundo', 'regular season': 'Fase de grupos', group: 'Fase de grupos',
-    'group stage': 'Fase de grupos', 'round of 32': '16 avos de final', 'round of 16': 'Oitavas de final',
-    quarterfinal: 'Quartas de final', semifinals: 'Semifinal', semifinal: 'Semifinal', final: 'Final',
-    '3rd place playoff': 'Disputa pelo 3º lugar', knockout: 'Mata-mata'
+    'fifa.world': 'Copa do Mundo',
+    'regular season': 'Fase de grupos',
+    group: 'Fase de grupos',
+    'group stage': 'Fase de grupos',
+    'round of 32': '16 avos',
+    'round of 16': 'Oitavas',
+    quarterfinal: 'Quartas de final',
+    quarterfinals: 'Quartas de final',
+    semifinals: 'Semifinais',
+    semifinal: 'Semifinal',
+    final: 'Final',
+    '3rd place playoff': 'Disputa pelo 3º lugar',
+    knockout: 'Mata-mata'
   };
   if (!raw) return 'Copa do Mundo';
-  return map[raw.toLowerCase()] || raw;
+  return map[raw.toLowerCase()] || map[normalized] || raw;
 }
 
 function teamForm(team) {
@@ -147,11 +169,13 @@ function matchCard(match) {
   const scoreText = Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) ? `${match.homeScore} × ${match.awayScore}` : null;
   const stage = translateStage(match.stage);
   const status = translateStatus(match.status);
+  const liveHighlight = shouldShowLiveHighlight(match);
+  const stageLabel = liveHighlight ? `${stage} - AO VIVO` : stage;
 
   if (isFinished(match)) {
     const winner = match.homeScore === match.awayScore ? 'Empate' : match.homeScore > match.awayScore ? match.home : match.away;
     return `<article class="match-card finished">
-      <div class="match-top"><span>${stage}</span><time>${formatDate(match.date)}</time></div>
+      <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${scoreText}</b><strong>${match.away}</strong></div>
       <p class="result-text">Resultado: ${winner}</p>
       <small>${status || 'Finalizado'}${match.source ? ` • ${match.source}` : ''}</small>
@@ -160,7 +184,7 @@ function matchCard(match) {
 
   if (isLive(match) && scoreText) {
     return `<article class="match-card live">
-      <div class="match-top"><span>${stage}</span><time>${formatDate(match.date)}</time></div>
+      <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${scoreText}</b><strong>${match.away}</strong></div>
       <p class="prediction"><b>Ao vivo:</b> ${status}</p>
       <small>Placar atualizado automaticamente pela internet.</small>
@@ -168,8 +192,8 @@ function matchCard(match) {
   }
 
   const p = predict(match);
-  return `<article class="match-card upcoming">
-    <div class="match-top"><span>${stage}</span><time>${formatDate(match.date)}</time></div>
+  return `<article class="match-card upcoming${liveHighlight ? ' live' : ''}">
+    <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
     <div class="score-line"><strong>${match.home}</strong><b>${p.homeGoals} × ${p.awayGoals}</b><strong>${match.away}</strong></div>
     <p class="prediction"><b>Previsão:</b> ${p.winner}</p>
     <div class="probabilities">
@@ -225,6 +249,14 @@ function formatDate(date) {
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return date;
   return parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+}
+
+function formatDateTime(date) {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+  const formattedDate = parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  const formattedTime = parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${formattedDate} - ${formattedTime}`;
 }
 
 function setSyncStatus(text, type = 'neutral') {
