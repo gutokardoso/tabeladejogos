@@ -479,6 +479,67 @@ function detailKey(match) {
   return `${String(match.date || '').slice(0, 10)}|${normalizeTeamName(match.home || '')}|${normalizeTeamName(match.away || '')}`.toLowerCase();
 }
 
+const DETAILS_CACHE_KEY = 'copaFreeDetails.v1';
+
+function readDetailsCache() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DETAILS_CACHE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeDetailsCache(cache) {
+  try { localStorage.setItem(DETAILS_CACHE_KEY, JSON.stringify(cache)); } catch (_) {}
+}
+
+function getCachedManualDetails(match) {
+  const cache = readDetailsCache();
+  return cache[detailKey(match)] || null;
+}
+
+function saveManualDetails(match, details) {
+  const cache = readDetailsCache();
+  cache[detailKey(match)] = {
+    ...(details || {}),
+    sources: [...new Set([...(details?.sources || []), 'Correção manual local'])],
+    updatedAt: new Date().toISOString()
+  };
+  writeDetailsCache(cache);
+  return cache[detailKey(match)];
+}
+
+function parseManualDetailsText(text, match) {
+  const data = { goals: [], cards: [], fouls: [], substitutions: [], stats: {}, sources: ['Correção manual local'] };
+  String(text || '').split(/\n+/).map(line => line.trim()).filter(Boolean).forEach(line => {
+    const [kindRaw, ...parts] = line.split('|').map(part => part.trim());
+    const kind = String(kindRaw || '').toLowerCase();
+    if (kind === 'estadio' || kind === 'estádio') data.venue = parts.join(' | ');
+    else if (kind === 'arbitro' || kind === 'árbitro') data.referee = parts.join(' | ');
+    else if (kind === 'publico' || kind === 'público') data.attendance = parts.join(' | ');
+    else if (kind === 'gol') data.goals.push({ time: parts[0] || '', player: parts[1] || '', team: parts[2] || '', assist: parts[3] || '' });
+    else if (kind === 'cartao' || kind === 'cartão') data.cards.push({ time: parts[0] || '', player: parts[1] || '', team: parts[2] || '', card: translateCard(parts[3] || 'Cartão amarelo') });
+    else if (kind === 'falta') data.fouls.push({ time: parts[0] || '', player: parts[1] || '', drawnBy: parts[2] || '', team: parts[3] || '' });
+    else if (kind === 'sub' || kind === 'substituicao' || kind === 'substituição') data.substitutions.push({ time: parts[0] || '', in: parts[1] || '', out: parts[2] || '', team: parts[3] || '' });
+    else if (kind === 'stat' || kind === 'estatistica' || kind === 'estatística') data.stats[parts[0] || 'info'] = parts.slice(1).join(' | ');
+  });
+  return normalizeExternalDetailPayload(data, match);
+}
+
+function detailsToManualText(details = {}) {
+  const lines = [];
+  if (details.venue) lines.push(`estadio | ${details.venue}`);
+  if (details.referee) lines.push(`arbitro | ${details.referee}`);
+  if (details.attendance) lines.push(`publico | ${details.attendance}`);
+  (details.goals || []).forEach(g => lines.push(`gol | ${g.time || ''} | ${g.player || ''} | ${g.team || ''}${g.assist ? ` | ${g.assist}` : ''}`));
+  (details.cards || []).forEach(c => lines.push(`cartao | ${c.time || ''} | ${c.player || ''} | ${c.team || ''} | ${c.card || c.type || ''}`));
+  (details.fouls || []).forEach(f => lines.push(`falta | ${f.time || ''} | ${f.player || ''} | ${f.drawnBy || ''} | ${f.team || ''}`));
+  (details.substitutions || []).forEach(sub => lines.push(`sub | ${sub.time || ''} | ${sub.in || sub.player || ''} | ${sub.out || ''} | ${sub.team || ''}`));
+  Object.entries(details.stats || {}).forEach(([key, value]) => lines.push(`stat | ${key} | ${value}`));
+  return lines.join('\\n');
+}
+
 function getForcedVerifiedDetails(match) {
   const key = detailKey(match);
   const known = {
@@ -524,10 +585,12 @@ function getForcedVerifiedDetails(match) {
 }
 
 function forceDetailsWhenMissing(match, current = {}) {
-  // Nunca fabricar eventos de jogo. Só mescla dados já obtidos de APIs/fontes oficiais
-  // e correções verificadas manualmente para partidas específicas.
+  // Modo gratuito: nunca inventa eventos. Mescla apenas dados encontrados em fontes públicas,
+  // correções verificadas já cadastradas e informações manuais salvas localmente.
   const verified = getForcedVerifiedDetails(match);
-  const merged = mergeDetailPayloads(current || {}, verified || {});
+  const cachedManual = getCachedManualDetails(match);
+  let merged = mergeDetailPayloads(current || {}, verified || {});
+  merged = mergeDetailPayloads(merged, cachedManual || {});
   if (!merged.venue && match.venue) merged.venue = match.venue;
   return merged;
 }
@@ -572,7 +635,7 @@ function renderFactList(items, emptyText, type) {
 
 function renderStatsList(stats = {}) {
   const entries = Object.entries(stats).filter(([, value]) => value !== undefined && value !== null && value !== '');
-  if (!entries.length) return '<li class="pending-detail">Estatísticas oficiais em sincronização.</li>';
+  if (!entries.length) return '<li class="pending-detail">Sem estatísticas encontradas nas fontes gratuitas. Complete manualmente abaixo se tiver a informação.</li>';
   return entries.map(([key, value]) => `<li><b>${escapeHtml(labelStat(key))}</b> ${escapeHtml(value)}</li>`).join('');
 }
 
@@ -668,13 +731,19 @@ async function openMatchDetails(id) {
     <p><b>Estádio:</b> ${escapeHtml(facts.venue)}${facts.referee ? ` • <b>Árbitro:</b> ${escapeHtml(facts.referee)}` : ''}${facts.attendance ? ` • <b>Público:</b> ${escapeHtml(facts.attendance)}` : ''}</p>
     <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
     <div class="match-events-grid">
-      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'Sincronizando gols em tempo real com fontes oficiais...', 'goal')}</ul></section>
-      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'Sincronizando cartões em tempo real com fontes oficiais...', 'card')}</ul></section>
-      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'Sincronizando faltas em tempo real com fontes oficiais...', 'foul')}</ul></section>
-      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'Sincronizando substituições em tempo real com fontes oficiais...', 'sub')}</ul></section>
+      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'Sem gols encontrados nas fontes gratuitas. Complete manualmente abaixo se tiver a informação.', 'goal')}</ul></section>
+      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'Sem cartões encontrados nas fontes gratuitas. Complete manualmente abaixo se tiver a informação.', 'card')}</ul></section>
+      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'Sem faltas encontradas nas fontes gratuitas. Complete manualmente abaixo se tiver a informação.', 'foul')}</ul></section>
+      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'Sem substituições encontradas nas fontes gratuitas. Complete manualmente abaixo se tiver a informação.', 'sub')}</ul></section>
       <section><h3>Estatísticas</h3><ul>${renderStatsList(facts.stats)}</ul></section>
     </div>
-    <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'busca automática em ESPN, TheSportsDB, backend/proxy configurável e fontes públicas alternativas.'}</p>
+    <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'fontes gratuitas públicas + cache local. Nenhum evento é inventado automaticamente.'}</p>
+    <details class="manual-details-box">
+      <summary>Completar/corrigir detalhes manualmente</summary>
+      <p>Use uma linha por informação. Exemplos: <code>gol | 54’ | Kai Havertz | Alemanha</code>, <code>cartao | 71’ | Jogador | Time | amarelo</code>, <code>falta | 80’ | Jogador que fez | Jogador que sofreu | Time</code>.</p>
+      <textarea data-manual-details-id="${matchIdentifier(match)}" rows="8" spellcheck="false">${escapeHtml(detailsToManualText(forceDetailsWhenMissing(match, match.details || {})))}</textarea>
+      <button class="details-save-btn" type="button" data-save-details-id="${matchIdentifier(match)}">Salvar detalhes neste navegador</button>
+    </details>
     <button class="share-btn" type="button" data-share-id="${matchIdentifier(match)}">Compartilhar previsão</button>
   `;
   matchModalEl.setAttribute('aria-hidden', 'false');
@@ -1316,14 +1385,14 @@ function setSyncStatus(text, type = 'neutral') {
 }
 
 async function loadInternetScores() {
-  setSyncStatus('Atualizando placares da internet...', 'loading');
+  setSyncStatus('Atualizando placares gratuitos e cache local...', 'loading');
   try {
     const matches = API_CONFIG.provider === 'football-data' ? await fetchFootballDataMatches() : await fetchEspnMatches();
     if (!matches.length) throw new Error('A API não retornou jogos para o período.');
     liveData = mergeMatches(COPA_DATA, matches);
     liveData.lastUpdated = new Date().toISOString();
     liveData.source = API_CONFIG.provider;
-    setSyncStatus(`Placares sincronizados: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, 'ok');
+    setSyncStatus(`Placares gratuitos sincronizados: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, 'ok');
   } catch (error) {
     liveData = structuredClone(COPA_DATA);
     liveData.matches.forEach(match => { match.details = forceDetailsWhenMissing(match, match.details || {}); });
@@ -1448,8 +1517,20 @@ matchModalEl?.addEventListener('click', event => { if (event.target === matchMod
 document.addEventListener('click', event => {
   const details = event.target.closest?.('[data-details-id]');
   const share = event.target.closest?.('[data-share-id]');
+  const saveDetails = event.target.closest?.('[data-save-details-id]');
   if (details) openMatchDetails(details.dataset.detailsId);
   if (share) shareMatch(share.dataset.shareId);
+  if (saveDetails) {
+    const id = saveDetails.dataset.saveDetailsId;
+    const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(id));
+    const textarea = matchDetailsEl?.querySelector(`[data-manual-details-id="${CSS.escape(id)}"]`);
+    if (match && textarea) {
+      const parsed = parseManualDetailsText(textarea.value, match);
+      match.details = mergeDetailPayloads(match.details || {}, saveManualDetails(match, parsed));
+      match.detailsLoaded = true;
+      openMatchDetails(id);
+    }
+  }
 });
 
 if ('serviceWorker' in navigator) {
