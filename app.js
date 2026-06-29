@@ -154,6 +154,10 @@ function translateStatus(status = '') {
 function translateStage(stage = '') {
   const raw = String(stage || '').trim();
   const normalized = raw.toLowerCase().replaceAll('-', ' ');
+  const groupMatch = normalized.match(/^group\s+([a-l])$/i);
+  if (groupMatch) return `Grupo ${groupMatch[1].toUpperCase()}`;
+  const grupoMatch = normalized.match(/^grupo\s+([a-l])$/i);
+  if (grupoMatch) return `Grupo ${grupoMatch[1].toUpperCase()}`;
   const map = {
     'fifa.world': 'Copa do Mundo',
     'regular season': 'Fase de grupos',
@@ -595,10 +599,13 @@ function savePredictionResult(match) {
   return { match, p, realWinner, hit };
 }
 
-const HISTORY_CACHE_KEY = 'copaPredictionHistory.v2';
+const HISTORY_CACHE_KEY = 'copaPredictionHistory.v4';
+try { localStorage.removeItem('copaPredictionHistory.v2'); localStorage.removeItem('copaPredictionHistory.v3'); } catch (_) {}
 
 function historyMatchId(match) {
-  return String(match.id || matchIdentifier(match) || matchKey(match));
+  // Histórico precisa deduplicar também registros vindos de fontes diferentes.
+  // O id da fonte pode mudar; por isso usamos fase normalizada + par de times.
+  return `${stageGroup(match.stage)}|${fixtureTeamsKey(match)}`;
 }
 
 function readHistoryCache() {
@@ -645,9 +652,16 @@ function syncPredictionHistoryCache() {
       map.set(String(snapshot._historyId), snapshot);
     });
 
-  const merged = [...map.values()]
+  const unique = new Map();
+  [...map.values()]
     .filter(item => Number.isFinite(new Date(item.date).getTime()))
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .forEach(item => {
+      const key = historyMatchId(item);
+      const existing = unique.get(key);
+      if (!existing || fixtureQuality(item) >= fixtureQuality(existing)) unique.set(key, item);
+    });
+
+  const merged = [...unique.values()].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   writeHistoryCache(merged);
   return merged;
@@ -1472,7 +1486,7 @@ function stageGroup(stage = '') {
   if (/quartas/.test(translated)) return 'qf';
   if (/semi/.test(translated)) return 'sf';
   if (/final/.test(translated) && !/3|terceiro|disputa/.test(translated)) return 'final';
-  if (/grupo|fase de grupos/.test(translated)) return translated;
+  if (/grupo|group|fase de grupos/.test(translated)) return 'group';
   return translated || 'stage';
 }
 
