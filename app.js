@@ -8,11 +8,19 @@ const nextMatchLabel = document.querySelector('#nextMatchLabel');
 const heroCardEl = document.querySelector('.hero-card');
 const filterButtons = [...document.querySelectorAll('.filter')];
 const syncStatusEl = document.querySelector('#syncStatus');
+const bracketEl = document.querySelector('#bracket');
+const teamSearchEl = document.querySelector('#teamSearch');
+const predictionHistoryEl = document.querySelector('#predictionHistory');
+const matchModalEl = document.querySelector('#matchModal');
+const matchDetailsEl = document.querySelector('#matchDetails');
+const closeModalBtn = document.querySelector('#closeModal');
 const refreshScoresBtn = document.querySelector('#refreshScores');
 
 let currentFilter = 'upcoming';
 let liveData = structuredClone(COPA_DATA);
 let refreshTimer = null;
+let searchTerm = '';
+let lastScoreSnapshot = new Map();
 
 function isFinished(match) {
   return Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) && /final|encerrado/i.test(match.status || 'finalizado');
@@ -165,15 +173,17 @@ function predict(match) {
 
 function renderSummary() {
   const visibleMatches = liveData.matches.filter(hasDefinedTeams);
-  const finished = visibleMatches.filter(isFinished);
-  const upcoming = visibleMatches.filter(m => !isFinished(m));
-  const live = visibleMatches.filter(isLive);
-  const goals = finished.reduce((sum, m) => sum + m.homeScore + m.awayScore, 0);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayMatches = visibleMatches.filter(m => String(m.date).slice(0, 10) === todayKey);
+  const finishedToday = todayMatches.filter(isFinished);
+  const live = visibleMatches.filter(m => shouldShowLiveHighlight(m));
+  const nextToday = todayMatches.filter(m => !isFinished(m)).length;
+  const goalsToday = finishedToday.reduce((sum, m) => sum + m.homeScore + m.awayScore, 0);
   summaryEl.innerHTML = `
-    <div><strong>${finished.length}</strong><span>jogos finalizados</span></div>
-    <div><strong>${upcoming.length}</strong><span>próximos/ao vivo</span></div>
+    <div><strong>${todayMatches.length}</strong><span>jogos de hoje</span></div>
     <div><strong>${live.length}</strong><span>ao vivo agora</span></div>
-    <div><strong>${(goals / Math.max(1, finished.length)).toFixed(1)}</strong><span>gols por jogo</span></div>
+    <div><strong>${nextToday}</strong><span>ainda hoje</span></div>
+    <div><strong>${goalsToday}</strong><span>gols hoje</span></div>
   `;
 }
 
@@ -194,6 +204,110 @@ function rankingItem(position, team, score, label) {
   return `<div class="rank-item"><b>${position}</b><span>${team}</span><strong>${score}</strong><small>${label}</small></div>`;
 }
 
+
+function matchStatusText(match) {
+  if (isFinished(match)) return 'Encerrado';
+  if (isLive(match)) return translateStatus(match.status);
+  const minutes = minutesUntilKickoff(match);
+  if (minutes > 0 && minutes <= 30) return `Começa em ${Math.ceil(minutes)} min`;
+  return translateStatus(match.status);
+}
+
+function matchIdentifier(match) {
+  return match.id || matchKey(match);
+}
+
+function getTeamStatsLine(team) {
+  const f = teamForm(team);
+  if (!f.played) return 'Sem jogos finalizados nesta base.';
+  return `${f.wins}V ${f.draws}E ${f.losses}D • ${f.gf} gols feitos • ${f.ga} sofridos`;
+}
+
+function savePredictionResult(match) {
+  if (!isFinished(match)) return null;
+  const p = predict(match);
+  const realWinner = match.homeScore === match.awayScore ? 'Empate no tempo normal' : match.homeScore > match.awayScore ? match.home : match.away;
+  const hit = p.winner === realWinner;
+  return { match, p, realWinner, hit };
+}
+
+function openMatchDetails(id) {
+  const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(id));
+  if (!match || !matchDetailsEl || !matchModalEl) return;
+  const p = predict(match);
+  const liveScore = `${Number.isInteger(match.homeScore) ? match.homeScore : 0} × ${Number.isInteger(match.awayScore) ? match.awayScore : 0}`;
+  const score = isFinished(match) || shouldShowLiveHighlight(match) ? liveScore : `${p.homeGoals} × ${p.awayGoals}`;
+  matchDetailsEl.innerHTML = `
+    <span class="modal-kicker">${translateStage(match.stage)} • ${formatDateTime(match.date)}</span>
+    <h2>${match.home} x ${match.away}</h2>
+    <div class="modal-score">${score}</div>
+    <p><b>Status:</b> ${matchStatusText(match)}</p>
+    <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
+    <div class="detail-grid">
+      <div><strong>${match.home}</strong><span>${getTeamStatsLine(match.home)}</span><small>Chance: ${p.homeChance}%</small></div>
+      <div><strong>Empate</strong><span>Equilíbrio no tempo normal</span><small>Chance: ${p.drawChance}%</small></div>
+      <div><strong>${match.away}</strong><span>${getTeamStatsLine(match.away)}</span><small>Chance: ${p.awayChance}%</small></div>
+    </div>
+    <p><b>Escalação provável:</b> disponível quando a API fornecer dados oficiais de pré-jogo.</p>
+    <button class="share-btn" type="button" data-share-id="${matchIdentifier(match)}">Compartilhar previsão</button>
+  `;
+  matchModalEl.setAttribute('aria-hidden', 'false');
+  matchModalEl.classList.add('open');
+}
+
+function closeMatchDetails() {
+  matchModalEl?.setAttribute('aria-hidden', 'true');
+  matchModalEl?.classList.remove('open');
+}
+
+async function shareMatch(id) {
+  const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(id));
+  if (!match) return;
+  const p = predict(match);
+  const text = `${match.home} x ${match.away} — previsão: ${p.homeGoals} x ${p.awayGoals}. Favorito: ${p.winner}.`;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Previsão da Copa', text }); return; } catch (_) {}
+  }
+  await navigator.clipboard?.writeText(text);
+  alert('Previsão copiada para compartilhar.');
+}
+
+function renderBracket() {
+  if (!bracketEl) return;
+  const visible = liveData.matches.filter(hasDefinedTeams).sort((a,b) => new Date(a.date) - new Date(b.date));
+  const stages = ['16 avos', 'Oitavas', 'Quartas de final', 'Semifinal', 'Semifinais', 'Final'];
+  bracketEl.innerHTML = stages.map(stageName => {
+    const stageMatches = visible.filter(m => translateStage(m.stage).toLowerCase() === stageName.toLowerCase()).slice(0, 4);
+    const items = stageMatches.length ? stageMatches.map(m => {
+      const score = isFinished(m) ? `${m.homeScore} × ${m.awayScore}` : shouldShowLiveHighlight(m) ? `${Number.isInteger(m.homeScore) ? m.homeScore : 0} × ${Number.isInteger(m.awayScore) ? m.awayScore : 0}` : 'Em breve';
+      return `<li><span>${m.home} x ${m.away}</span><b>${score}</b></li>`;
+    }).join('') : '<li><span>Aguardando definidos</span><b>—</b></li>';
+    return `<div class="bracket-col"><h3>${stageName}</h3><ul>${items}</ul></div>`;
+  }).join('');
+}
+
+function renderPredictionHistory() {
+  if (!predictionHistoryEl) return;
+  const results = liveData.matches.filter(hasDefinedTeams).map(savePredictionResult).filter(Boolean).slice(-6).reverse();
+  predictionHistoryEl.innerHTML = results.length ? results.map(({match, p, realWinner, hit}) => `
+    <div class="history-item ${hit ? 'hit' : 'miss'}">
+      <strong>${match.home} ${match.homeScore} × ${match.awayScore} ${match.away}</strong>
+      <span>Palpite: ${p.homeGoals} × ${p.awayGoals} • ${p.winner}</span>
+      <b>${hit ? 'Acertou o vencedor' : `Resultado: ${realWinner}`}</b>
+    </div>
+  `).join('') : '<p class="empty-state">O histórico será preenchido quando houver jogos finalizados.</p>';
+}
+
+function detectScoreChanges() {
+  liveData.matches.filter(hasDefinedTeams).forEach(match => {
+    const id = matchIdentifier(match);
+    const current = `${match.homeScore ?? '-'}:${match.awayScore ?? '-'}`;
+    const previous = lastScoreSnapshot.get(id);
+    match.justChanged = previous && previous !== current && Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore);
+    lastScoreSnapshot.set(id, current);
+  });
+}
+
 function matchCard(match) {
   const scoreText = Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) ? `${match.homeScore} × ${match.awayScore}` : null;
   const stage = translateStage(match.stage);
@@ -203,27 +317,29 @@ function matchCard(match) {
 
   if (isFinished(match)) {
     const winner = match.homeScore === match.awayScore ? 'Empate' : match.homeScore > match.awayScore ? match.home : match.away;
-    return `<article class="match-card finished">
+    return `<article class="match-card finished ${match.justChanged ? 'score-flash' : ''}" data-match-id="${matchIdentifier(match)}">
       <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${scoreText}</b><strong>${match.away}</strong></div>
       <p class="result-text">Resultado: ${winner}</p>
       <small>${status || 'Finalizado'}${match.source ? ` • ${match.source}` : ''}</small>
+      <div class="card-actions"><button type="button" class="details-btn" data-details-id="${matchIdentifier(match)}">Detalhes</button><button type="button" class="share-btn" data-share-id="${matchIdentifier(match)}">Compartilhar</button></div>
     </article>`;
   }
 
   if (liveHighlight) {
     const liveHomeScore = Number.isInteger(match.homeScore) ? match.homeScore : 0;
     const liveAwayScore = Number.isInteger(match.awayScore) ? match.awayScore : 0;
-    return `<article class="match-card live">
+    return `<article class="match-card live ${match.justChanged ? 'score-flash' : ''}" data-match-id="${matchIdentifier(match)}">
       <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${liveHomeScore} × ${liveAwayScore}</b><strong>${match.away}</strong></div>
       <p class="prediction"><b>Ao vivo:</b> ${status}</p>
       <small>Placar atualizado automaticamente pela internet.</small>
+      <div class="card-actions"><button type="button" class="details-btn" data-details-id="${matchIdentifier(match)}">Detalhes</button><button type="button" class="share-btn" data-share-id="${matchIdentifier(match)}">Compartilhar</button></div>
     </article>`;
   }
 
   const p = predict(match);
-  return `<article class="match-card upcoming">
+  return `<article class="match-card upcoming" data-match-id="${matchIdentifier(match)}">
     <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
     <div class="score-line"><strong>${match.home}</strong><b>${p.homeGoals} × ${p.awayGoals}</b><strong>${match.away}</strong></div>
     <p class="prediction"><b>Previsão:</b> ${p.winner}</p>
@@ -234,6 +350,7 @@ function matchCard(match) {
     </div>
     <div class="bars"><i style="width:${p.homeChance}%"></i><i style="width:${p.drawChance}%"></i><i style="width:${p.awayChance}%"></i></div>
     <small>Base: força histórica, ranking, valor técnico e desempenho nos jogos já finalizados.</small>
+    <div class="card-actions"><button type="button" class="details-btn" data-details-id="${matchIdentifier(match)}">Detalhes</button><button type="button" class="share-btn" data-share-id="${matchIdentifier(match)}">Compartilhar</button></div>
   </article>`;
 }
 
@@ -241,7 +358,7 @@ function getOrderedMatches() {
   const byDateAsc = (a, b) => new Date(a.date) - new Date(b.date);
   const byDateDesc = (a, b) => new Date(b.date) - new Date(a.date);
 
-  const visibleMatches = [...liveData.matches].filter(hasDefinedTeams);
+  const visibleMatches = [...liveData.matches].filter(hasDefinedTeams).filter(m => !searchTerm || `${m.home} ${m.away}`.toLowerCase().includes(searchTerm));
 
   if (currentFilter === 'finished') {
     return visibleMatches.filter(isFinished).sort(byDateDesc);
@@ -286,6 +403,8 @@ function renderMatches() {
 function renderAll() {
   renderSummary();
   renderRankings();
+  renderBracket();
+  renderPredictionHistory();
   renderMatches();
 }
 
@@ -322,6 +441,7 @@ async function loadInternetScores() {
     liveData = structuredClone(COPA_DATA);
     setSyncStatus(`Usando dados locais. Motivo: ${error.message}`, 'warning');
   }
+  detectScoreChanges();
   renderAll();
 }
 
@@ -399,6 +519,24 @@ function mergeMatches(base, apiMatches) {
 
 function matchKey(match) {
   return `${String(match.date).slice(0, 10)}|${match.home}|${match.away}`.toLowerCase();
+}
+
+teamSearchEl?.addEventListener('input', event => {
+  searchTerm = event.target.value.trim().toLowerCase();
+  renderMatches();
+});
+
+closeModalBtn?.addEventListener('click', closeMatchDetails);
+matchModalEl?.addEventListener('click', event => { if (event.target === matchModalEl) closeMatchDetails(); });
+document.addEventListener('click', event => {
+  const details = event.target.closest?.('[data-details-id]');
+  const share = event.target.closest?.('[data-share-id]');
+  if (details) openMatchDetails(details.dataset.detailsId);
+  if (share) shareMatch(share.dataset.shareId);
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
 filterButtons.forEach(button => {

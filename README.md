@@ -1,9 +1,9 @@
-# App Copa do Mundo 2026 — Previsões e placares ao vivo
+# Tabela de Jogos | Copa do Mundo 2026
 
-Alterações desta versão:
-- Cards entram no modo AO VIVO 30 minutos antes do início e permanecem verdes até o jogo finalizar.
-- No modo AO VIVO, o placar de palpite é substituído pelo placar real, começando em 0 x 0 quando a API ainda não trouxe gols.
-- A caixa “Próximo jogo” no topo segue a mesma regra de AO VIVO, com fundo #005122 e placar em branco.
-- Placares são atualizados automaticamente pela internet conforme configuração da API.
+App web em português brasileiro com placares ao vivo, previsões inteligentes, TOP 3 favoritos, possíveis surpresas, resumo do dia, chave da Copa, busca por seleção, detalhes por partida, compartilhamento e instalação como PWA.
 
-Para rodar localmente, abra `index.html` em um navegador ou publique a pasta na Vercel/GitHub Pages.
+## Atualização de placares
+O app usa ESPN por padrão e atualiza automaticamente a cada 60 segundos. Caso a API falhe, utiliza a base local em `data.js`.
+
+## PWA
+Abra o app no navegador e use “Adicionar à tela inicial” para instalar no celular.

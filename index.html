@@ -7,6 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#005122" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -34,9 +36,25 @@
         <div id="surprises" class="ranking-list"></div>
       </article>
       <article class="panel stats-panel">
-        <h2>Resumo da Copa</h2>
+        <h2>Resumo do dia</h2>
         <div class="stats-grid" id="summaryStats"></div>
       </article>
+    </section>
+
+    <section class="panel bracket-panel">
+      <div class="panel-title-row">
+        <div>
+          <h2>Chave da Copa</h2>
+          <p>Caminho provável até a final com base nos times definidos e nas previsões atuais.</p>
+        </div>
+      </div>
+      <div id="bracket" class="bracket-grid"></div>
+    </section>
+
+    <section class="panel sponsor-panel">
+      <span>Espaço patrocinador</span>
+      <strong>Sua marca nos jogos da Copa</strong>
+      <small>Área premium para inserir logo, campanha ou chamada comercial.</small>
     </section>
 
     <section class="toolbar panel">
@@ -45,6 +63,7 @@
         <p>Placares passados e projeções para jogos futuros.</p>
         <small id="syncStatus" class="sync-status">Conectando aos placares ao vivo...</small>
       </div>
+      <div class="search-wrap"><input id="teamSearch" type="search" placeholder="Buscar seleção" aria-label="Buscar seleção" /></div>
       <div class="filters">
         <button class="filter active" data-filter="upcoming">Próximos</button>
         <button class="filter" data-filter="finished">Finalizados</button>
@@ -53,7 +72,19 @@
     </section>
 
     <section id="matches" class="matches"></section>
+
+    <section class="panel prediction-history-panel">
+      <h2>Histórico de palpites</h2>
+      <div id="predictionHistory" class="history-list"></div>
+    </section>
   </main>
+
+  <div id="matchModal" class="modal" aria-hidden="true">
+    <div class="modal-box">
+      <button id="closeModal" class="modal-close" type="button">×</button>
+      <div id="matchDetails"></div>
+    </div>
+  </div>
 
   <script src="data.js"></script>
   <script src="app.js"></script>

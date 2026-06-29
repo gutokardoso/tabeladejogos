@@ -173,3 +173,40 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
   text-transform: none;
   letter-spacing: -0.02em;
 }
+
+.bracket-panel, .sponsor-panel, .prediction-history-panel { margin-bottom: 18px; }
+.panel-title-row { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+.panel-title-row p, .sponsor-panel small { color: var(--muted); margin: -8px 0 0; }
+.bracket-grid { display:grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.bracket-col { min-width: 185px; padding: 14px; border-radius: 18px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); }
+.bracket-col h3 { margin: 0 0 12px; color: var(--gold); font-size: 15px; text-transform: uppercase; letter-spacing: .05em; }
+.bracket-col ul { list-style:none; padding:0; margin:0; display:grid; gap:8px; }
+.bracket-col li { display:flex; justify-content:space-between; gap:10px; padding:9px; border-radius:12px; background:rgba(0,0,0,.18); color:var(--muted); font-size:12px; }
+.bracket-col li b { color:#fff; white-space:nowrap; }
+.sponsor-panel { display:flex; align-items:center; justify-content:space-between; gap:16px; background: linear-gradient(135deg, rgba(255,213,106,.18), rgba(0,81,34,.55)); }
+.sponsor-panel span { color:var(--gold); font-size:12px; font-weight:900; letter-spacing:.14em; text-transform:uppercase; }
+.sponsor-panel strong { font-size:22px; }
+.search-wrap input { width: 190px; border:1px solid var(--line); background:rgba(255,255,255,.08); color:var(--text); padding:12px 14px; border-radius:999px; outline:none; font-weight:700; }
+.search-wrap input::placeholder { color:rgba(255,255,255,.55); }
+.card-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+.details-btn, .share-btn { border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08); color:#fff; border-radius:999px; padding:9px 12px; font-weight:900; cursor:pointer; }
+.share-btn { background: rgba(255,213,106,.16); color:var(--gold); }
+.details-btn:hover, .share-btn:hover { background:rgba(255,255,255,.16); }
+.history-list { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; }
+.history-item { padding:14px; border-radius:16px; background:rgba(255,255,255,.08); display:grid; gap:6px; border:1px solid rgba(255,255,255,.10); }
+.history-item strong { color:#fff; }
+.history-item span { color:var(--muted); font-size:13px; }
+.history-item b { color:var(--red); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+.history-item.hit b { color:var(--green); }
+.modal { position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,.72); z-index:20; padding:20px; }
+.modal.open { display:grid; }
+.modal-box { width:min(760px, 100%); max-height:90vh; overflow:auto; border-radius:28px; border:1px solid var(--line); background:#071722; box-shadow:0 30px 90px rgba(0,0,0,.55); padding:28px; position:relative; }
+.modal-close { position:absolute; top:14px; right:16px; width:38px; height:38px; border:0; border-radius:50%; background:rgba(255,255,255,.1); color:#fff; font-size:25px; cursor:pointer; }
+.modal-kicker { color:var(--gold); font-weight:900; text-transform:uppercase; letter-spacing:.08em; font-size:12px; }
+.modal-score { font-size:clamp(42px, 8vw, 72px); font-weight:900; color:#fff; letter-spacing:-.08em; margin:12px 0; }
+.detail-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin:16px 0; }
+.detail-grid div { padding:14px; border-radius:16px; background:rgba(255,255,255,.08); display:grid; gap:6px; }
+.detail-grid span, .detail-grid small { color:var(--muted); }
+.score-flash { animation: goalFlash 1.2s ease-in-out 2; }
+@keyframes goalFlash { 0%,100% { box-shadow: 0 24px 60px rgba(0,0,0,.28); } 50% { box-shadow: 0 0 44px rgba(255,213,106,.55); transform: translateY(-2px); } }
+@media (max-width: 900px) { .bracket-grid, .history-list, .detail-grid { grid-template-columns: 1fr; } .sponsor-panel { align-items:flex-start; flex-direction:column; } .search-wrap input { width:100%; } .filters { width:100%; } }
