@@ -33,3 +33,8 @@ Observação: se a fonte oficial não entregar segundos reais, nenhum front-end 
 - Correção de duplicidade de jogos ao mesclar tabela local/API/agregador.
 - A deduplicação compara times normalizados, fase e janela de datas, priorizando o registro oficial/API quando houver conflito.
 - Impede duplicatas como Argentina x Cabo Verde em datas diferentes quando representam a mesma partida.
+
+
+## Versão v2
+- Adicionado rodapé preto de 35px com logo clicável da Agência Taboo.
+- Atualizado cache para forçar carregamento dos novos assets.
