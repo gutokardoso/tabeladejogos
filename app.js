@@ -55,11 +55,15 @@ function minutesUntilKickoff(match) {
   return (kickoff.getTime() - Date.now()) / 60000;
 }
 
+function isPregameWindow(match) {
+  if (isFinished(match) || isLive(match)) return false;
+  const minutes = minutesUntilKickoff(match);
+  return Number.isFinite(minutes) && minutes >= 0 && minutes <= 30;
+}
+
 function shouldShowLiveHighlight(match) {
   if (isFinished(match)) return false;
-  const minutes = minutesUntilKickoff(match);
-  // Entra no modo AO VIVO 30 minutos antes do início e só sai quando o jogo for finalizado pela API.
-  return isLive(match) || minutes <= 30;
+  return isLive(match) || isPregameWindow(match);
 }
 
 function teamBase(team) {
@@ -984,8 +988,8 @@ function matchCard(match) {
     return `<article class="match-card live ${match.justChanged ? 'score-flash' : ''}" data-match-id="${matchIdentifier(match)}">
       <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${liveHomeScore} × ${liveAwayScore}</b><strong>${match.away}</strong></div>
-      <p class="prediction"><b>Tempo:</b> ${formatGameClock(match)} • ${status}</p>
-      <small>Placar atualizado automaticamente pela internet.</small>
+      <p class="prediction">${isLive(match) ? `<b>Tempo:</b> ${formatGameClock(match)} • ${status}` : `<b>Status:</b> ${status}`}</p>
+      <small>${isLive(match) ? 'Placar atualizado automaticamente pela internet.' : 'Aguardando início da partida.'}</small>
       <div class="card-actions"><button type="button" class="details-btn" data-details-id="${matchIdentifier(match)}">Detalhes</button><button type="button" class="share-btn" data-share-id="${matchIdentifier(match)}">Compartilhar</button></div>
     </article>`;
   }
@@ -1039,7 +1043,9 @@ function renderMatches() {
       const liveAwayScore = Number.isInteger(next.awayScore) ? next.awayScore : 0;
       heroCardEl?.classList.add('live');
       nextMatchPrediction?.classList.add('live-score');
-      if (nextMatchLabel) nextMatchLabel.innerHTML = `<small class="top-live-clock">${formatGameClock(next)}</small><span>AO VIVO</span>`;
+      if (nextMatchLabel) nextMatchLabel.innerHTML = isLive(next)
+        ? `<small class="top-live-clock">${formatGameClock(next)}</small><span>AO VIVO</span>`
+        : `<small class="top-live-clock">${matchStatusText(next)}</small><span>AO VIVO</span>`;
       nextMatchPrediction.textContent = `${liveHomeScore} x ${liveAwayScore}`;
     } else {
       const p = predict(next);
