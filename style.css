@@ -42,9 +42,9 @@ h1 { font-size: clamp(38px, 6vw, 78px); line-height: .92; margin: 0; letter-spac
   box-shadow: 0 24px 60px rgba(0,0,0,.28);
   border-radius: 28px;
 }
-.hero-card { padding: 24px; display: flex; flex-direction: column; justify-content: end; height: 215px; min-height: 215px; overflow: hidden; background: linear-gradient(145deg, rgba(255,213,106,.2), rgba(102,166,255,.12)); }
+.hero-card { padding: 18px 24px; display: flex; flex-direction: column; justify-content: center; height: 185px !important; min-height: 185px !important; max-height: 185px !important; overflow: hidden; background: linear-gradient(145deg, rgba(255,213,106,.2), rgba(102,166,255,.12)); }
 .hero-card span, .match-top span, .match-top time, small { color: var(--muted); }
-.hero-card strong { font-size: 30px; line-height: 1.05; margin: 12px 0; }
+.hero-card strong { font-size: clamp(24px, 3vw, 34px); line-height: 1.03; margin: 8px 0; }
 .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 18px; margin-bottom: 18px; }
 .panel { padding: 22px; }
 h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
@@ -78,7 +78,7 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
 @media (max-width: 900px) {
   .hero, .dashboard-grid, .matches { grid-template-columns: 1fr; }
   .toolbar { flex-direction: column; align-items: flex-start; }
-  .hero-card { height: 215px; min-height: 215px; }
+  .hero-card { height: 185px !important; min-height: 185px !important; max-height: 185px !important; }
 }
 @media (max-width: 520px) {
   .app-shell { width: min(100% - 20px, 1180px); padding: 18px 0; }
@@ -167,14 +167,15 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
 
 .hero-card.live .live-score {
   color: #fff;
-  font-size: 30px;
+  font-size: clamp(26px, 3.2vw, 38px);
   line-height: 1.05;
   font-weight: 900;
   text-transform: none;
   letter-spacing: -0.02em;
 }
 
-.bracket-panel, .sponsor-panel, .prediction-history-panel { margin-bottom: 18px; }
+.bracket-panel, .sponsor-panel { margin-bottom: 18px; }
+.prediction-history-panel { margin-top: 20px !important; margin-bottom: 18px; clear: both; }
 .panel-title-row { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
 .panel-title-row p, .sponsor-panel small { color: var(--muted); margin: -8px 0 0; }
 .bracket-grid { display:grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 4px; }
@@ -272,3 +273,13 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
 @media (max-width: 900px) {
   .match-events-grid { grid-template-columns: 1fr; }
 }
+
+.hero-card.live {
+  height: 185px !important;
+  min-height: 185px !important;
+  max-height: 185px !important;
+  justify-content: center;
+}
+.hero-card.live #nextMatchLabel { margin: 0; }
+.hero-card.live #nextMatchTitle { margin: 6px 0 8px; }
+.hero-card.live #nextMatchPrediction { margin: 0; }

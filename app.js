@@ -648,10 +648,68 @@ function getTeamStatsLine(team) {
 
 function savePredictionResult(match) {
   if (!isFinished(match)) return null;
-  const p = predict(match);
+  const p = match.savedPrediction || predict(match);
   const realWinner = match.homeScore === match.awayScore ? 'Empate no tempo normal' : match.homeScore > match.awayScore ? match.home : match.away;
   const hit = p.winner === realWinner;
   return { match, p, realWinner, hit };
+}
+
+const HISTORY_CACHE_KEY = 'copaPredictionHistory.v2';
+
+function historyMatchId(match) {
+  return String(match.id || matchIdentifier(match) || matchKey(match));
+}
+
+function readHistoryCache() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_CACHE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeHistoryCache(items) {
+  try {
+    localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(items.slice(0, 30)));
+  } catch (_) {}
+}
+
+function snapshotFinishedMatch(match) {
+  const p = predict(match);
+  return {
+    _historyId: historyMatchId(match),
+    id: match.id,
+    date: match.date,
+    stage: match.stage,
+    home: match.home,
+    away: match.away,
+    homeScore: match.homeScore,
+    awayScore: match.awayScore,
+    status: 'Finalizado',
+    source: match.source || '',
+    savedPrediction: p
+  };
+}
+
+function syncPredictionHistoryCache() {
+  const cached = readHistoryCache();
+  const map = new Map(cached.map(item => [String(item._historyId || historyMatchId(item)), item]));
+
+  liveData.matches
+    .filter(hasDefinedTeams)
+    .filter(isFinished)
+    .forEach(match => {
+      const snapshot = snapshotFinishedMatch(match);
+      map.set(String(snapshot._historyId), snapshot);
+    });
+
+  const merged = [...map.values()]
+    .filter(item => Number.isFinite(new Date(item.date).getTime()))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  writeHistoryCache(merged);
+  return merged;
 }
 
 async function openMatchDetails(id) {
@@ -1170,14 +1228,18 @@ function renderBracket() {
 
 function renderPredictionHistory() {
   if (!predictionHistoryEl) return;
-  const results = liveData.matches.filter(hasDefinedTeams).map(savePredictionResult).filter(Boolean).slice(-6).reverse();
+  const results = syncPredictionHistoryCache()
+    .map(savePredictionResult)
+    .filter(Boolean)
+    .slice(0, 6);
+
   predictionHistoryEl.innerHTML = results.length ? results.map(({match, p, realWinner, hit}) => `
     <div class="history-item ${hit ? 'hit' : 'miss'}">
       <strong>${match.home} ${match.homeScore} × ${match.awayScore} ${match.away}</strong>
       <span>Palpite: ${p.homeGoals} × ${p.awayGoals} • ${p.winner}</span>
       <b>${hit ? 'Acertou o vencedor' : `Resultado: ${realWinner}`}</b>
     </div>
-  `).join('') : '<p class="empty-state">O histórico será preenchido quando houver jogos finalizados.</p>';
+  `).join('') : '<p class="empty-state">O histórico será preenchido automaticamente quando houver jogos finalizados.</p>';
 }
 
 function detectScoreChanges() {
@@ -1469,6 +1531,7 @@ refreshTimer = setInterval(loadInternetScores, Math.max(30, API_CONFIG.refreshSe
 setInterval(() => {
   if (liveData.matches.some(m => shouldShowLiveHighlight(m))) {
     renderMatches();
+    renderPredictionHistory();
     if (activeDetailsMatchId && matchModalEl?.classList.contains('open')) {
       const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(activeDetailsMatchId));
       if (match) {
