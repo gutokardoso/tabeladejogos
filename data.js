@@ -7,7 +7,15 @@ const API_CONFIG = {
   // Opcional: para produção com API oficial/comercial, preencha abaixo e troque provider para 'football-data'.
   // Atenção: token em front-end fica visível. Para uso profissional, use um backend/proxy.
   footballDataEndpoint: 'https://api.football-data.org/v4/competitions/WC/matches',
-  footballDataToken: ''
+  footballDataToken: '',
+
+  // Camada profissional opcional: informe uma URL de backend/proxy para enriquecer detalhes
+  // com fontes como Google/ESPN/Sofascore/Flashscore sem bloqueios de CORS.
+  // Exemplo de resposta esperada: { venue, referee, attendance, goals:[], cards:[], fouls:[], substitutions:[], stats:{}, clock }
+  detailsProxyEndpoint: '',
+
+  // Busca pública sem chave como tentativa extra. Pode falhar por CORS em alguns navegadores.
+  allOriginsProxy: 'https://api.allorigins.win/raw?url='
 };
 
 const COPA_DATA = {

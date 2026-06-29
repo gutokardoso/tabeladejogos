@@ -226,7 +226,7 @@ function escapeHtml(value = '') {
     .replaceAll("'", '&#039;');
 }
 
-function formatClockParts(totalSeconds, maxMinutes = 90) {
+function formatClockParts(totalSeconds, maxMinutes = 130) {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
   const maxSeconds = maxMinutes * 60;
   const clamped = Math.min(safeSeconds, maxSeconds);
@@ -237,21 +237,42 @@ function formatClockParts(totalSeconds, maxMinutes = 90) {
 
 function parseClockToSeconds(clock) {
   const raw = String(clock || '').trim();
+  if (!raw) return null;
+  // Aceita formatos oficiais comuns: 69:40, 90+4, 105', 111, 1:09:40.
+  const hourClock = raw.match(/^(\d{1,2}):(\d{2}):(\d{2})/);
+  if (hourClock) return (Number(hourClock[1]) * 3600) + (Number(hourClock[2]) * 60) + Number(hourClock[3]);
+  const plusClock = raw.match(/^(\d{1,3})\s*\+\s*(\d{1,2})/);
+  if (plusClock) return ((Number(plusClock[1]) + Number(plusClock[2])) * 60);
   const match = raw.match(/^(\d{1,3})(?::(\d{2}))?/);
-  if (match) {
-    return (Number(match[1]) * 60) + Number(match[2] || 0);
-  }
-  const num = Number(raw.replace(',', '.'));
+  if (match) return (Number(match[1]) * 60) + Number(match[2] || 0);
+  const num = Number(raw.replace(',', '.').replace(/[^\d.]/g, ''));
   if (Number.isFinite(num)) return Math.floor(num * 60);
   return null;
 }
 
+function isExtraTime(match) {
+  const status = String(match.status || '').toLowerCase();
+  return Number(match.period || 0) >= 3 || /extra|prorroga|et|1st extra|2nd extra|tempo extra/.test(status);
+}
+
+function isPenaltyShootout(match) {
+  return /penalt|pênalt|shootout/.test(String(match.status || '').toLowerCase());
+}
+
+function clockMaxFor(match) {
+  if (isPenaltyShootout(match)) return 130;
+  if (isExtraTime(match)) return 130;
+  return 90;
+}
+
 function formatGameClock(match) {
-  const apiSeconds = parseClockToSeconds(match.clock);
-  if (apiSeconds !== null) return formatClockParts(apiSeconds, 90);
+  const officialClock = match.officialClock || match.clock || match.gameClock;
+  const apiSeconds = parseClockToSeconds(officialClock);
+  if (apiSeconds !== null) return formatClockParts(apiSeconds, clockMaxFor(match));
 
   const status = String(match.status || '').toLowerCase();
   if (/intervalo|halftime|half time/.test(status)) return '45:00';
+  if (isPenaltyShootout(match)) return 'Pênaltis';
   if (!isLive(match)) return '00:00';
 
   const kickoff = new Date(match.date);
@@ -260,13 +281,15 @@ function formatGameClock(match) {
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - kickoff.getTime()) / 1000));
   const period = Number(match.period || 0);
 
-  // Nunca usar tempo corrido bruto do relógio do sistema como tempo válido de jogo.
-  // Quando a API não enviar o cronômetro, desconta o intervalo padrão e limita o tempo regular a 90:00.
+  // Se a fonte não enviar o minuto oficial, estimamos por período e nunca tratamos
+  // tempo corrido bruto como tempo válido. Na prorrogação o limite passa a 120+.
   if (period === 1 || /1º|primeiro|first/.test(status)) return formatClockParts(elapsedSeconds, 45);
-  if (period >= 2 || /2º|segundo|second/.test(status)) return formatClockParts(Math.max(45 * 60, elapsedSeconds - (15 * 60)), 90);
+  if (period === 2 || /2º|segundo|second/.test(status)) return formatClockParts(Math.max(45 * 60, elapsedSeconds - (15 * 60)), 90);
+  if (period === 3 || /1.*extra|primeiro.*prorroga/.test(status)) return formatClockParts(Math.max(90 * 60, elapsedSeconds - (15 * 60)), 105);
+  if (period >= 4 || /2.*extra|segundo.*prorroga|extra|prorroga/.test(status)) return formatClockParts(Math.max(105 * 60, elapsedSeconds - (20 * 60)), 130);
 
   const estimatedValidSeconds = elapsedSeconds > 60 * 60 ? elapsedSeconds - (15 * 60) : elapsedSeconds;
-  return formatClockParts(estimatedValidSeconds, 90);
+  return formatClockParts(estimatedValidSeconds, isExtraTime(match) ? 130 : 90);
 }
 
 function normalizeMatchFacts(match) {
@@ -274,12 +297,18 @@ function normalizeMatchFacts(match) {
   const goals = details.goals || match.goals || [];
   const cards = details.cards || match.cards || [];
   const fouls = details.fouls || match.fouls || [];
+  const substitutions = details.substitutions || match.substitutions || [];
+  const stats = details.stats || match.stats || {};
   const sources = details.sources || [];
   return {
     venue: details.venue || match.venue || 'Estádio ainda não localizado nas fontes conectadas.',
+    referee: details.referee || match.referee || '',
+    attendance: details.attendance || match.attendance || '',
     goals,
     cards,
     fouls,
+    substitutions,
+    stats,
     sources,
     loading: Boolean(match.detailsLoading),
     loaded: Boolean(match.detailsLoaded)
@@ -292,11 +321,23 @@ function renderFactList(items, emptyText, type) {
     const time = item.time || item.minute || item.clock || '';
     const player = item.player || item.athlete || item.scorer || 'Jogador não informado';
     const team = item.team ? ` • ${item.team}` : '';
-    if (type === 'goal') return `<li><b>${escapeHtml(time)}</b> Gol de ${escapeHtml(player)}${escapeHtml(team)}</li>`;
+    if (type === 'goal') return `<li><b>${escapeHtml(time)}</b> Gol de ${escapeHtml(player)}${escapeHtml(team)}${item.assist ? ` <small>Assistência: ${escapeHtml(item.assist)}</small>` : ''}</li>`;
     if (type === 'card') return `<li><b>${escapeHtml(time)}</b> ${escapeHtml(item.card || item.type || 'Cartão')} para ${escapeHtml(player)}${escapeHtml(team)}</li>`;
     if (type === 'foul') return `<li><b>${escapeHtml(time)}</b> ${escapeHtml(player)} fez falta em ${escapeHtml(item.drawnBy || item.victim || 'jogador não informado')}${escapeHtml(team)}</li>`;
+    if (type === 'sub') return `<li><b>${escapeHtml(time)}</b> Entrou ${escapeHtml(item.in || item.player || 'jogador')} • Saiu ${escapeHtml(item.out || '')}${escapeHtml(team)}</li>`;
     return `<li>${escapeHtml(JSON.stringify(item))}</li>`;
   }).join('');
+}
+
+function renderStatsList(stats = {}) {
+  const entries = Object.entries(stats).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  if (!entries.length) return '<li class="pending-detail">Estatísticas detalhadas ainda não retornaram pelas fontes conectadas.</li>';
+  return entries.map(([key, value]) => `<li><b>${escapeHtml(labelStat(key))}</b> ${escapeHtml(value)}</li>`).join('');
+}
+
+function labelStat(key) {
+  const map = { possession: 'Posse de bola', shots: 'Finalizações', shotsOnGoal: 'Finalizações no gol', corners: 'Escanteios', offsides: 'Impedimentos', fouls: 'Faltas', yellowCards: 'Cartões amarelos', redCards: 'Cartões vermelhos', xg: 'xG' };
+  return map[key] || key;
 }
 
 function getTeamStatsLine(team) {
@@ -325,7 +366,7 @@ async function openMatchDetails(id) {
     <h2>${match.home} x ${match.away}</h2>
     <div class="modal-score">${score}</div>
     <p><b>Status:</b> ${matchStatusText(match)}${shouldShowLiveHighlight(match) ? ` • Tempo de jogo: ${formatGameClock(match)}` : ''}</p>
-    <p><b>Estádio:</b> ${escapeHtml(facts.venue)}</p>
+    <p><b>Estádio:</b> ${escapeHtml(facts.venue)}${facts.referee ? ` • <b>Árbitro:</b> ${escapeHtml(facts.referee)}` : ''}${facts.attendance ? ` • <b>Público:</b> ${escapeHtml(facts.attendance)}` : ''}</p>
     <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
     <div class="detail-grid">
       <div><strong>${match.home}</strong><span>${getTeamStatsLine(match.home)}</span><small>Chance: ${p.homeChance}%</small></div>
@@ -336,8 +377,10 @@ async function openMatchDetails(id) {
       <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'As fontes conectadas ainda não retornaram autor/minuto dos gols para este jogo.', 'goal')}</ul></section>
       <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'As fontes conectadas ainda não retornaram cartões individuais para este jogo.', 'card')}</ul></section>
       <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'As fontes conectadas ainda não retornaram faltas individuais para este jogo.', 'foul')}</ul></section>
+      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'As fontes conectadas ainda não retornaram substituições individuais para este jogo.', 'sub')}</ul></section>
+      <section><h3>Estatísticas</h3><ul>${renderStatsList(facts.stats)}</ul></section>
     </div>
-    <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'busca automática em ESPN e fontes públicas alternativas configuradas no app.'}</p>
+    <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'busca automática em ESPN, TheSportsDB, backend/proxy configurável e fontes públicas alternativas.'}</p>
     <button class="share-btn" type="button" data-share-id="${matchIdentifier(match)}">Compartilhar previsão</button>
   `;
   matchModalEl.setAttribute('aria-hidden', 'false');
@@ -351,6 +394,7 @@ async function hydrateEspnDetails(match) {
   try {
     const collected = await fetchMatchDetailsFromAllSources(match);
     match.details = mergeDetailPayloads(match.details || {}, collected);
+    if (match.details.clock) match.clock = match.details.clock;
     match.detailsLoaded = true;
   } finally {
     match.detailsLoading = false;
@@ -367,9 +411,12 @@ async function fetchMatchDetailsFromAllSources(match) {
   const payloads = [];
 
   const attempts = [
+    ['Backend/Google Proxy', () => fetchConfiguredDetailsProxy(match)],
     ['ESPN Summary', () => fetchEspnSummaryDetails(match)],
     ['ESPN Plays', () => fetchEspnPlayByPlayDetails(match)],
-    ['TheSportsDB', () => fetchTheSportsDbDetails(match)]
+    ['ESPN Scoreboard', () => fetchEspnScoreboardDetail(match)],
+    ['TheSportsDB', () => fetchTheSportsDbDetails(match)],
+    ['Busca pública via proxy', () => fetchPublicSearchDetails(match)]
   ];
 
   for (const [sourceName, loader] of attempts) {
@@ -395,9 +442,14 @@ function hasUsefulDetails(details = {}) {
 function mergeDetailPayloads(base = {}, extra = {}) {
   return {
     venue: extra.venue || base.venue,
+    referee: extra.referee || base.referee,
+    attendance: extra.attendance || base.attendance,
+    clock: extra.clock || base.clock,
     goals: uniqueEvents([...(base.goals || []), ...(extra.goals || [])]),
     cards: uniqueEvents([...(base.cards || []), ...(extra.cards || [])]),
-    fouls: uniqueEvents([...(base.fouls || []), ...(extra.fouls || [])]).slice(0, 20),
+    fouls: uniqueEvents([...(base.fouls || []), ...(extra.fouls || [])]).slice(0, 30),
+    substitutions: uniqueEvents([...(base.substitutions || []), ...(extra.substitutions || [])]).slice(0, 20),
+    stats: { ...(base.stats || {}), ...(extra.stats || {}) },
     sources: [...new Set([...(base.sources || []), ...(extra.sources || [])])]
   };
 }
@@ -410,6 +462,101 @@ function uniqueEvents(items = []) {
     seen.add(key);
     return true;
   });
+}
+
+
+async function fetchConfiguredDetailsProxy(match) {
+  if (!API_CONFIG.detailsProxyEndpoint) return null;
+  const url = new URL(API_CONFIG.detailsProxyEndpoint);
+  url.searchParams.set('home', match.home);
+  url.searchParams.set('away', match.away);
+  url.searchParams.set('date', String(match.date).slice(0, 10));
+  if (match.id) url.searchParams.set('id', match.id);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return normalizeExternalDetailPayload(data, match);
+}
+
+function normalizeExternalDetailPayload(data = {}, match) {
+  return {
+    venue: data.venue || data.stadium || '',
+    referee: data.referee || '',
+    attendance: data.attendance || '',
+    clock: data.clock || data.minute || '',
+    goals: (data.goals || []).map(g => ({ time: g.time || g.minute || '', player: g.player || g.scorer || '', team: normalizeTeamName(g.team || ''), assist: g.assist || '' })),
+    cards: (data.cards || []).map(c => ({ time: c.time || c.minute || '', player: c.player || '', team: normalizeTeamName(c.team || ''), card: translateCard(c.card || c.type || '') })),
+    fouls: (data.fouls || []).map(f => ({ time: f.time || f.minute || '', player: f.player || f.committedBy || '', drawnBy: f.drawnBy || f.victim || '', team: normalizeTeamName(f.team || '') })),
+    substitutions: (data.substitutions || []).map(sub => ({ time: sub.time || sub.minute || '', in: sub.in || sub.playerIn || '', out: sub.out || sub.playerOut || '', team: normalizeTeamName(sub.team || '') })),
+    stats: data.stats || {},
+    sources: data.sources || []
+  };
+}
+
+function translateCard(card = '') {
+  const raw = String(card || '').toLowerCase();
+  if (/red|vermelho/.test(raw)) return 'Cartão vermelho';
+  if (/yellow|amarelo/.test(raw)) return 'Cartão amarelo';
+  return card || 'Cartão';
+}
+
+async function fetchEspnScoreboardDetail(match) {
+  if (!match.id) return null;
+  const dates = String(match.date).slice(0, 10).replaceAll('-', '');
+  const response = await fetch(`${API_CONFIG.espnEndpoint}?dates=${dates}`, { cache: 'no-store' });
+  if (!response.ok) return null;
+  const data = await response.json();
+  const event = (data.events || []).find(ev => String(ev.id) === String(match.id));
+  if (!event) return null;
+  const competition = event.competitions?.[0] || {};
+  const status = competition.status || event.status || {};
+  if (status.displayClock) match.clock = status.displayClock;
+  if (status.period) match.period = Number(status.period);
+  return {
+    venue: competition.venue?.fullName || competition.venue?.displayName || '',
+    clock: status.displayClock || '',
+    sources: ['ESPN Scoreboard']
+  };
+}
+
+async function fetchPublicSearchDetails(match) {
+  if (!API_CONFIG.allOriginsProxy) return null;
+  // Tentativa leve via páginas públicas. Navegadores podem bloquear por CORS; por isso existe o detailsProxyEndpoint.
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`${match.home} ${match.away} ${String(match.date).slice(0,10)} gols cartões faltas`)}`;
+  const proxied = `${API_CONFIG.allOriginsProxy}${encodeURIComponent(searchUrl)}`;
+  const response = await fetch(proxied, { cache: 'no-store' });
+  if (!response.ok) return null;
+  const html = await response.text();
+  return parseLoosePublicHtml(html, match);
+}
+
+function parseLoosePublicHtml(html = '', match) {
+  const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const venueMatch = text.match(/(?:Estádio|Stadium|Venue)[:\s]+([^\.\|\-]{3,80})/i);
+  return {
+    venue: venueMatch ? venueMatch[1].trim() : '',
+    goals: extractGoalsFromLooseText(text, match),
+    cards: extractCardsFromLooseText(text, match),
+    fouls: [],
+    sources: ['Busca pública via proxy']
+  };
+}
+
+function extractGoalsFromLooseText(text = '', match) {
+  const teams = [match.home, match.away].join('|');
+  const pattern = new RegExp(`(\\d{1,3}(?:\\+\\d{1,2})?)[’' min\\.]*\\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ'\\- ]{2,40})\\s*(?:\\(|-|—)?\\s*(${teams})?`, 'gi');
+  const goals = [];
+  let m;
+  while ((m = pattern.exec(text)) && goals.length < 10) goals.push({ time: `${m[1]}’`, player: m[2].trim(), team: m[3] || '' });
+  return goals;
+}
+
+function extractCardsFromLooseText(text = '', match) {
+  const pattern = /(cartão amarelo|cartão vermelho|yellow card|red card)\s*(?:para|to)?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ'\- ]{2,40})/gi;
+  const cards = [];
+  let m;
+  while ((m = pattern.exec(text)) && cards.length < 12) cards.push({ time: '', card: translateCard(m[1]), player: m[2].trim(), team: '' });
+  return cards;
 }
 
 async function fetchEspnSummaryDetails(match) {
@@ -448,7 +595,45 @@ function parseEspnDetailPayload(data, match) {
     drawnBy: play.participants?.[1]?.athlete?.displayName || extractVictimFromFoulText(play.text) || '',
     team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
   }));
-  return { venue, goals, cards, fouls };
+  const substitutions = allPlays.filter(play => /substitution|substituição/i.test(play.type?.text || play.text || '')).map(play => ({
+    time: play.clock?.displayValue || play.time?.displayValue || '',
+    in: play.participants?.[0]?.athlete?.displayName || extractSubIn(play.text) || '',
+    out: play.participants?.[1]?.athlete?.displayName || extractSubOut(play.text) || '',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
+  }));
+  const stats = parseEspnStats(data, match);
+  const referee = data.gameInfo?.officials?.[0]?.displayName || competition?.officials?.[0]?.displayName || '';
+  const attendance = data.gameInfo?.attendance ? Number(data.gameInfo.attendance).toLocaleString('pt-BR') : '';
+  return { venue, referee, attendance, goals, cards, fouls, substitutions, stats };
+}
+
+function parseEspnStats(data, match) {
+  const rows = data.boxscore?.teams || data.boxscore?.statistics || [];
+  const result = {};
+  const statLines = JSON.stringify(rows);
+  const extract = (label) => {
+    const re = new RegExp(`"name"\s*:\s*"${label}"[\s\S]{0,120}?"displayValue"\s*:\s*"([^"]+)"`, 'i');
+    const m = statLines.match(re);
+    return m ? m[1] : '';
+  };
+  result.possession = extract('possessionPct') || extract('Possession') || '';
+  result.shots = extract('totalShots') || extract('Shots') || '';
+  result.shotsOnGoal = extract('shotsOnTarget') || extract('Shots on Target') || '';
+  result.corners = extract('cornerKicks') || extract('Corner Kicks') || '';
+  result.fouls = extract('foulsCommitted') || extract('Fouls') || '';
+  result.yellowCards = extract('yellowCards') || '';
+  result.redCards = extract('redCards') || '';
+  return Object.fromEntries(Object.entries(result).filter(([,v]) => v));
+}
+
+function extractSubIn(text = '') {
+  const m = String(text).match(/(?:entra|enters|Substitution.*?,)\s*([^,\.]+?)\s*(?:replaces|substitui|entra)/i);
+  return m ? m[1].trim() : '';
+}
+
+function extractSubOut(text = '') {
+  const m = String(text).match(/(?:replaces|substitui)\s*([^,\.]+)/i);
+  return m ? m[1].trim() : '';
 }
 
 function espnGoal(play) {
@@ -716,7 +901,8 @@ function normalizeEspnEvent(event) {
   const away = competitors.find(c => c.homeAway === 'away');
   if (!home || !away) return null;
   const statusName = competition.status?.type?.description || event.status?.type?.description || 'Agendado';
-  const completed = competition.status?.type?.completed || /final/i.test(statusName);
+  const statusDetail = competition.status?.type?.detail || event.status?.type?.detail || statusName;
+  const completed = competition.status?.type?.completed || /final|complete|encerrado/i.test(statusName);
   return {
     id: event.id,
     date: event.date,
@@ -725,9 +911,10 @@ function normalizeEspnEvent(event) {
     away: normalizeTeamName(away.team?.displayName || away.team?.shortDisplayName),
     homeScore: home.score !== undefined && home.score !== '' ? Number(home.score) : undefined,
     awayScore: away.score !== undefined && away.score !== '' ? Number(away.score) : undefined,
-    status: completed ? 'Finalizado' : translateStatus(statusName),
+    status: completed ? 'Finalizado' : translateStatus(statusDetail),
     venue: competition.venue?.fullName || competition.venue?.displayName || '',
     clock: competition.status?.displayClock || event.status?.displayClock || '',
+    officialClock: competition.status?.displayClock || event.status?.displayClock || '',
     period: Number(competition.status?.period || event.status?.period || 0),
     source: 'ESPN'
   };

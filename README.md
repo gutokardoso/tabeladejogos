@@ -1,9 +1,16 @@
-# App Copa — previsões e detalhes enriquecidos
+# App Copa — tempo oficial e detalhes profissionais
 
 Atualização aplicada:
-- A tela de detalhes não depende mais de uma única resposta de API para gols/cartões/faltas.
-- Ao abrir um jogo, o app tenta enriquecer os detalhes em múltiplas fontes públicas: ESPN Summary, ESPN Play-by-Play e TheSportsDB.
-- A mensagem antiga “Nenhum gol informado pela API até agora.” foi removida.
-- Quando não houver detalhe individual disponível, o app informa que as fontes conectadas ainda não retornaram autor/minuto, em vez de afirmar que não existe gol.
+- O cronômetro agora aceita minutos oficiais acima de 90, incluindo prorrogação (91–120+) e pênaltis.
+- O app prioriza o relógio oficial da API/fonte conectada antes de estimar localmente.
+- A página de detalhes tenta enriquecer jogo por jogo com: estádio, árbitro, público, gols, cartões, faltas, substituições e estatísticas.
+- Foram adicionadas camadas de busca: backend/proxy configurável, ESPN Summary, ESPN Play-by-Play, ESPN Scoreboard, TheSportsDB e tentativa pública via proxy.
+- Para uso profissional com dados 100% completos, configure `detailsProxyEndpoint` em `data.js` com uma API/proxy próprio que consulte fontes como Google/ESPN/Sofascore/Flashscore/fornecedor oficial, evitando bloqueios de CORS.
 
-Observação: algumas informações detalhadas podem depender da disponibilidade/cobertura da fonte pública e de CORS. Para produção comercial, recomenda-se conectar um backend/proxy com API esportiva oficial.
+Arquivos principais:
+- `index.html`
+- `style.css`
+- `app.js`
+- `data.js`
+- `manifest.webmanifest`
+- `sw.js`
