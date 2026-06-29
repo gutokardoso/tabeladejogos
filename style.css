@@ -139,9 +139,27 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
 }
 
 .match-card.live .score-line b {
-  color: var(--green);
+  color: #fff;
 }
 
 .match-card.finished .score-line b {
   color: var(--gold);
+}
+
+
+.hero-card.live {
+  background: #005122;
+  border-color: rgba(117,255,183,.65);
+  box-shadow: 0 0 32px rgba(117,255,183,.18), 0 24px 60px rgba(0,0,0,.28);
+}
+
+.hero-card.live span,
+.hero-card.live small {
+  color: #75ffb7;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hero-card.live strong {
+  color: #fff;
 }

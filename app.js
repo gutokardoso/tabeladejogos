@@ -4,6 +4,7 @@ const surprisesEl = document.querySelector('#surprises');
 const summaryEl = document.querySelector('#summaryStats');
 const nextMatchTitle = document.querySelector('#nextMatchTitle');
 const nextMatchPrediction = document.querySelector('#nextMatchPrediction');
+const heroCardEl = document.querySelector('.hero-card');
 const filterButtons = [...document.querySelectorAll('.filter')];
 const syncStatusEl = document.querySelector('#syncStatus');
 const refreshScoresBtn = document.querySelector('#refreshScores');
@@ -17,7 +18,7 @@ function isFinished(match) {
 }
 
 function isLive(match) {
-  return /live|in progress|intervalo|1º|2º|andamento/i.test(match.status || '');
+  return /live|ao vivo|in progress|intervalo|1º|2º|andamento|half|extra|penalt/i.test(match.status || '');
 }
 
 function hasDefinedTeams(match) {
@@ -209,17 +210,19 @@ function matchCard(match) {
     </article>`;
   }
 
-  if (isLive(match) && scoreText) {
+  if (liveHighlight) {
+    const liveHomeScore = Number.isInteger(match.homeScore) ? match.homeScore : 0;
+    const liveAwayScore = Number.isInteger(match.awayScore) ? match.awayScore : 0;
     return `<article class="match-card live">
       <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
-      <div class="score-line"><strong>${match.home}</strong><b>${scoreText}</b><strong>${match.away}</strong></div>
+      <div class="score-line"><strong>${match.home}</strong><b>${liveHomeScore} × ${liveAwayScore}</b><strong>${match.away}</strong></div>
       <p class="prediction"><b>Ao vivo:</b> ${status}</p>
       <small>Placar atualizado automaticamente pela internet.</small>
     </article>`;
   }
 
   const p = predict(match);
-  return `<article class="match-card upcoming${liveHighlight ? ' live' : ''}">
+  return `<article class="match-card upcoming">
     <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
     <div class="score-line"><strong>${match.home}</strong><b>${p.homeGoals} × ${p.awayGoals}</b><strong>${match.away}</strong></div>
     <p class="prediction"><b>Previsão:</b> ${p.winner}</p>
@@ -256,12 +259,18 @@ function renderMatches() {
   matchesEl.innerHTML = filtered.map(matchCard).join('') || '<p class="empty-state">Nenhum jogo encontrado.</p>';
 
   const next = ordered.find(m => !isFinished(m));
+  heroCardEl?.classList.remove('live');
   if (next) {
-    const p = predict(next);
     nextMatchTitle.textContent = `${next.home} x ${next.away}`;
-    nextMatchPrediction.textContent = isLive(next) && Number.isInteger(next.homeScore)
-      ? `Ao vivo: ${next.homeScore} x ${next.awayScore}`
-      : `Palpite: ${p.homeGoals} x ${p.awayGoals} — ${p.winner}`;
+    if (shouldShowLiveHighlight(next)) {
+      const liveHomeScore = Number.isInteger(next.homeScore) ? next.homeScore : 0;
+      const liveAwayScore = Number.isInteger(next.awayScore) ? next.awayScore : 0;
+      heroCardEl?.classList.add('live');
+      nextMatchPrediction.textContent = `AO VIVO • ${liveHomeScore} x ${liveAwayScore}`;
+    } else {
+      const p = predict(next);
+      nextMatchPrediction.textContent = `Palpite: ${p.homeGoals} x ${p.awayGoals} — ${p.winner}`;
+    }
   } else {
     nextMatchTitle.textContent = 'Todos os jogos foram finalizados';
     nextMatchPrediction.textContent = 'Confira o ranking final.';
