@@ -226,24 +226,47 @@ function escapeHtml(value = '') {
     .replaceAll("'", '&#039;');
 }
 
-function formatGameClock(match) {
-  if (match.clock) {
-    const raw = String(match.clock).trim();
-    if (/^\d{1,3}:\d{2}$/.test(raw)) return raw;
-    const num = Number(raw);
-    if (Number.isFinite(num)) {
-      const minutes = Math.floor(num);
-      const seconds = Math.floor((num - minutes) * 60);
-      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
+function formatClockParts(totalSeconds, maxMinutes = 90) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const maxSeconds = maxMinutes * 60;
+  const clamped = Math.min(safeSeconds, maxSeconds);
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function parseClockToSeconds(clock) {
+  const raw = String(clock || '').trim();
+  const match = raw.match(/^(\d{1,3})(?::(\d{2}))?/);
+  if (match) {
+    return (Number(match[1]) * 60) + Number(match[2] || 0);
   }
+  const num = Number(raw.replace(',', '.'));
+  if (Number.isFinite(num)) return Math.floor(num * 60);
+  return null;
+}
+
+function formatGameClock(match) {
+  const apiSeconds = parseClockToSeconds(match.clock);
+  if (apiSeconds !== null) return formatClockParts(apiSeconds, 90);
+
+  const status = String(match.status || '').toLowerCase();
+  if (/intervalo|halftime|half time/.test(status)) return '45:00';
+  if (!isLive(match)) return '00:00';
+
   const kickoff = new Date(match.date);
   if (Number.isNaN(kickoff.getTime())) return '00:00';
-  const elapsedMs = Math.max(0, Date.now() - kickoff.getTime());
-  const totalSeconds = Math.floor(elapsedMs / 1000);
-  const minutes = Math.min(130, Math.floor(totalSeconds / 60));
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - kickoff.getTime()) / 1000));
+  const period = Number(match.period || 0);
+
+  // Nunca usar tempo corrido bruto do relógio do sistema como tempo válido de jogo.
+  // Quando a API não enviar o cronômetro, desconta o intervalo padrão e limita o tempo regular a 90:00.
+  if (period === 1 || /1º|primeiro|first/.test(status)) return formatClockParts(elapsedSeconds, 45);
+  if (period >= 2 || /2º|segundo|second/.test(status)) return formatClockParts(Math.max(45 * 60, elapsedSeconds - (15 * 60)), 90);
+
+  const estimatedValidSeconds = elapsedSeconds > 60 * 60 ? elapsedSeconds - (15 * 60) : elapsedSeconds;
+  return formatClockParts(estimatedValidSeconds, 90);
 }
 
 function normalizeMatchFacts(match) {
@@ -705,6 +728,7 @@ function normalizeEspnEvent(event) {
     status: completed ? 'Finalizado' : translateStatus(statusName),
     venue: competition.venue?.fullName || competition.venue?.displayName || '',
     clock: competition.status?.displayClock || event.status?.displayClock || '',
+    period: Number(competition.status?.period || event.status?.period || 0),
     source: 'ESPN'
   };
 }
