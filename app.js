@@ -164,7 +164,7 @@ function translateStage(stage = '') {
     quarterfinal: 'Quartas de final',
     quarterfinals: 'Quartas de final',
     semifinals: 'Semifinais',
-    semifinal: 'Semifinal',
+    semifinal: 'Semifinais',
     final: 'Final',
     '3rd place playoff': 'Disputa pelo 3º lugar',
     'third place playoff': 'Disputa pelo 3º lugar',
@@ -1045,7 +1045,7 @@ async function shareMatch(id) {
 function renderBracket() {
   if (!bracketEl) return;
   const visible = liveData.matches.filter(hasDefinedTeams).sort((a,b) => new Date(a.date) - new Date(b.date));
-  const stages = ['16 avos', 'Oitavas', 'Quartas de final', 'Semifinal', 'Semifinais', 'Final'];
+  const stages = ['16 avos', 'Oitavas', 'Quartas de final', 'Semifinais', 'Final', 'Disputa pelo 3º lugar'];
   bracketEl.innerHTML = stages.map(stageName => {
     const stageMatches = visible.filter(m => translateStage(m.stage).toLowerCase() === stageName.toLowerCase()).slice(0, 4);
     const items = stageMatches.length ? stageMatches.map(m => {
