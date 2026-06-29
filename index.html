@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Copa 2026 | Previsões</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Copa do Mundo 2026</p>
+        <h1>Tabela, placares e previsões inteligentes</h1>
+        <p class="subtitle">Acompanhe jogos passados, veja estatísticas dos próximos confrontos e descubra favoritos, placar provável e seleções que podem surpreender.</p>
+      </div>
+      <div class="hero-card">
+        <span>Próximo jogo</span>
+        <strong id="nextMatchTitle">Carregando...</strong>
+        <small id="nextMatchPrediction">Calculando previsão</small>
+        <button id="refreshScores" class="ghost-button" type="button">Atualizar placares</button>
+      </div>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="panel accent-panel">
+        <h2>3 favoritos</h2>
+        <div id="favorites" class="ranking-list"></div>
+      </article>
+      <article class="panel surprise-panel">
+        <h2>Podem surpreender</h2>
+        <div id="surprises" class="ranking-list"></div>
+      </article>
+      <article class="panel stats-panel">
+        <h2>Resumo da Copa</h2>
+        <div class="stats-grid" id="summaryStats"></div>
+      </article>
+    </section>
+
+    <section class="toolbar panel">
+      <div>
+        <h2>Tabela de jogos</h2>
+        <p>Placares passados e projeções para jogos futuros.</p>
+        <small id="syncStatus" class="sync-status">Conectando aos placares ao vivo...</small>
+      </div>
+      <div class="filters">
+        <button class="filter active" data-filter="all">Todos</button>
+        <button class="filter" data-filter="finished">Finalizados</button>
+        <button class="filter" data-filter="upcoming">Próximos</button>
+      </div>
+    </section>
+
+    <section id="matches" class="matches"></section>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
