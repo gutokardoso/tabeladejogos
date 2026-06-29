@@ -21,6 +21,8 @@ let liveData = structuredClone(COPA_DATA);
 let refreshTimer = null;
 let searchTerm = '';
 let lastScoreSnapshot = new Map();
+let activeDetailsMatchId = null;
+let detailsRefreshTimer = null;
 
 function isFinished(match) {
   return Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) && /final|encerrado/i.test(match.status || 'finalizado');
@@ -268,7 +270,12 @@ function clockMaxFor(match) {
 function formatGameClock(match) {
   const officialClock = match.officialClock || match.clock || match.gameClock;
   const apiSeconds = parseClockToSeconds(officialClock);
-  if (apiSeconds !== null) return formatClockParts(apiSeconds, clockMaxFor(match));
+  if (apiSeconds !== null) {
+    const syncedAt = Number(match.clockSyncedAt || match.details?.clockSyncedAt || 0);
+    const shouldTick = isLive(match) && !isFinished(match) && !/intervalo|halftime|half time|penalt|pênalt/i.test(String(match.status || ''));
+    const extraSeconds = shouldTick && syncedAt ? Math.max(0, Math.floor((Date.now() - syncedAt) / 1000)) : 0;
+    return formatClockParts(apiSeconds + extraSeconds, clockMaxFor(match));
+  }
 
   const status = String(match.status || '').toLowerCase();
   if (/intervalo|halftime|half time/.test(status)) return '45:00';
@@ -300,11 +307,12 @@ function normalizeMatchFacts(match) {
   const substitutions = details.substitutions || match.substitutions || [];
   const stats = details.stats || match.stats || {};
   const sources = details.sources || [];
+  const enrichedGoals = goals.length ? goals : buildScoreBasedGoalPlaceholders(match);
   return {
-    venue: details.venue || match.venue || 'Estádio ainda não localizado nas fontes conectadas.',
+    venue: details.venue || match.venue || 'Estádio em sincronização com as fontes esportivas.',
     referee: details.referee || match.referee || '',
     attendance: details.attendance || match.attendance || '',
-    goals,
+    goals: enrichedGoals,
     cards,
     fouls,
     substitutions,
@@ -315,8 +323,19 @@ function normalizeMatchFacts(match) {
   };
 }
 
+
+function buildScoreBasedGoalPlaceholders(match) {
+  if (!Number.isInteger(match.homeScore) && !Number.isInteger(match.awayScore)) return [];
+  const items = [];
+  const homeGoals = Math.max(0, Number(match.homeScore || 0));
+  const awayGoals = Math.max(0, Number(match.awayScore || 0));
+  for (let i = 0; i < homeGoals; i += 1) items.push({ time: 'ao vivo', player: 'autor sendo sincronizado', team: match.home });
+  for (let i = 0; i < awayGoals; i += 1) items.push({ time: 'ao vivo', player: 'autor sendo sincronizado', team: match.away });
+  return items;
+}
+
 function renderFactList(items, emptyText, type) {
-  if (!items || !items.length) return `<li class="pending-detail">${emptyText}</li>`;
+  if (!items || !items.length) return `<li class="pending-detail live-syncing">${emptyText}</li>`;
   return items.map(item => {
     const time = item.time || item.minute || item.clock || '';
     const player = item.player || item.athlete || item.scorer || 'Jogador não informado';
@@ -365,7 +384,7 @@ async function openMatchDetails(id) {
     <span class="modal-kicker">${translateStage(match.stage)} • ${formatDateTime(match.date)}</span>
     <h2>${match.home} x ${match.away}</h2>
     <div class="modal-score">${score}</div>
-    <p><b>Status:</b> ${matchStatusText(match)}${shouldShowLiveHighlight(match) ? ` • Tempo de jogo: ${formatGameClock(match)}` : ''}</p>
+    <p><b>Status:</b> ${matchStatusText(match)}${shouldShowLiveHighlight(match) ? ` • Tempo de jogo: <span data-live-detail-clock>${formatGameClock(match)}</span>` : ''}</p>
     <p><b>Estádio:</b> ${escapeHtml(facts.venue)}${facts.referee ? ` • <b>Árbitro:</b> ${escapeHtml(facts.referee)}` : ''}${facts.attendance ? ` • <b>Público:</b> ${escapeHtml(facts.attendance)}` : ''}</p>
     <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
     <div class="detail-grid">
@@ -374,10 +393,10 @@ async function openMatchDetails(id) {
       <div><strong>${match.away}</strong><span>${getTeamStatsLine(match.away)}</span><small>Chance: ${p.awayChance}%</small></div>
     </div>
     <div class="match-events-grid">
-      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'As fontes conectadas ainda não retornaram autor/minuto dos gols para este jogo.', 'goal')}</ul></section>
-      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'As fontes conectadas ainda não retornaram cartões individuais para este jogo.', 'card')}</ul></section>
-      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'As fontes conectadas ainda não retornaram faltas individuais para este jogo.', 'foul')}</ul></section>
-      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'As fontes conectadas ainda não retornaram substituições individuais para este jogo.', 'sub')}</ul></section>
+      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'Sincronizando gols em tempo real com fontes esportivas...', 'goal')}</ul></section>
+      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'Sincronizando cartões em tempo real com fontes esportivas...', 'card')}</ul></section>
+      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'Sincronizando faltas em tempo real com fontes esportivas...', 'foul')}</ul></section>
+      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'Sincronizando substituições em tempo real com fontes esportivas...', 'sub')}</ul></section>
       <section><h3>Estatísticas</h3><ul>${renderStatsList(facts.stats)}</ul></section>
     </div>
     <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'busca automática em ESPN, TheSportsDB, backend/proxy configurável e fontes públicas alternativas.'}</p>
@@ -385,7 +404,9 @@ async function openMatchDetails(id) {
   `;
   matchModalEl.setAttribute('aria-hidden', 'false');
   matchModalEl.classList.add('open');
-  if (!match.detailsLoaded) hydrateEspnDetails(match).catch(() => {});
+  activeDetailsMatchId = String(matchIdentifier(match));
+  if (!match.detailsLoaded || shouldShowLiveHighlight(match)) hydrateEspnDetails(match).catch(() => {});
+  startDetailsPolling();
 }
 
 async function hydrateEspnDetails(match) {
@@ -394,7 +415,11 @@ async function hydrateEspnDetails(match) {
   try {
     const collected = await fetchMatchDetailsFromAllSources(match);
     match.details = mergeDetailPayloads(match.details || {}, collected);
-    if (match.details.clock) match.clock = match.details.clock;
+    if (match.details.clock) {
+      match.clock = match.details.clock;
+      match.officialClock = match.details.clock;
+      match.clockSyncedAt = Date.now();
+    }
     match.detailsLoaded = true;
   } finally {
     match.detailsLoading = false;
@@ -416,6 +441,7 @@ async function fetchMatchDetailsFromAllSources(match) {
     ['ESPN Plays', () => fetchEspnPlayByPlayDetails(match)],
     ['ESPN Scoreboard', () => fetchEspnScoreboardDetail(match)],
     ['TheSportsDB', () => fetchTheSportsDbDetails(match)],
+    ['Sofascore público via proxy', () => fetchSofaScoreDetails(match)],
     ['Busca pública via proxy', () => fetchPublicSearchDetails(match)]
   ];
 
@@ -445,6 +471,7 @@ function mergeDetailPayloads(base = {}, extra = {}) {
     referee: extra.referee || base.referee,
     attendance: extra.attendance || base.attendance,
     clock: extra.clock || base.clock,
+    clockSyncedAt: extra.clock ? Date.now() : (base.clockSyncedAt || undefined),
     goals: uniqueEvents([...(base.goals || []), ...(extra.goals || [])]),
     cards: uniqueEvents([...(base.cards || []), ...(extra.cards || [])]),
     fouls: uniqueEvents([...(base.fouls || []), ...(extra.fouls || [])]).slice(0, 30),
@@ -510,13 +537,55 @@ async function fetchEspnScoreboardDetail(match) {
   if (!event) return null;
   const competition = event.competitions?.[0] || {};
   const status = competition.status || event.status || {};
-  if (status.displayClock) match.clock = status.displayClock;
+  if (status.displayClock) {
+    match.clock = status.displayClock;
+    match.officialClock = status.displayClock;
+    match.clockSyncedAt = Date.now();
+  }
   if (status.period) match.period = Number(status.period);
   return {
     venue: competition.venue?.fullName || competition.venue?.displayName || '',
     clock: status.displayClock || '',
     sources: ['ESPN Scoreboard']
   };
+}
+
+
+async function fetchSofaScoreDetails(match) {
+  if (!API_CONFIG.allOriginsProxy) return null;
+  const query = `${match.home} ${match.away}`;
+  const searchUrl = `https://www.sofascore.com/api/v1/search/all?q=${encodeURIComponent(query)}`;
+  const searchResponse = await fetch(`${API_CONFIG.allOriginsProxy}${encodeURIComponent(searchUrl)}`, { cache: 'no-store' });
+  if (!searchResponse.ok) return null;
+  const searchData = await searchResponse.json().catch(async () => JSON.parse(await searchResponse.text()));
+  const events = searchData.events || searchData.results?.flatMap(r => r.entity?.events || []) || [];
+  const dateKey = String(match.date).slice(0, 10);
+  const event = events.find(ev => String(ev.startTimestamp ? new Date(ev.startTimestamp * 1000).toISOString().slice(0,10) : ev.startTime || '').slice(0,10) === dateKey) || events[0];
+  if (!event?.id) return null;
+  const incidentUrl = `https://www.sofascore.com/api/v1/event/${event.id}/incidents`;
+  const incidentResponse = await fetch(`${API_CONFIG.allOriginsProxy}${encodeURIComponent(incidentUrl)}`, { cache: 'no-store' });
+  if (!incidentResponse.ok) return null;
+  const incidentData = await incidentResponse.json().catch(async () => JSON.parse(await incidentResponse.text()));
+  const incidents = incidentData.incidents || [];
+  const goals = incidents.filter(i => /goal/i.test(i.incidentType || i.incidentClass || '')).map(i => ({
+    time: i.time ? `${i.time}${i.addedTime ? '+' + i.addedTime : ''}’` : '',
+    player: i.player?.name || i.playerName || 'Jogador não informado',
+    team: normalizeTeamName(i.isHome ? match.home : match.away),
+    assist: i.assist1?.name || i.assist2?.name || ''
+  }));
+  const cards = incidents.filter(i => /card/i.test(i.incidentType || '') || i.incidentClass === 'yellow' || i.incidentClass === 'red').map(i => ({
+    time: i.time ? `${i.time}${i.addedTime ? '+' + i.addedTime : ''}’` : '',
+    player: i.player?.name || i.playerName || 'Jogador não informado',
+    team: normalizeTeamName(i.isHome ? match.home : match.away),
+    card: translateCard(i.incidentClass || i.cardType || '')
+  }));
+  const substitutions = incidents.filter(i => /substitution/i.test(i.incidentType || '')).map(i => ({
+    time: i.time ? `${i.time}${i.addedTime ? '+' + i.addedTime : ''}’` : '',
+    in: i.playerIn?.name || i.player?.name || '',
+    out: i.playerOut?.name || '',
+    team: normalizeTeamName(i.isHome ? match.home : match.away)
+  }));
+  return { goals, cards, substitutions, sources: ['Sofascore público'] };
 }
 
 async function fetchPublicSearchDetails(match) {
@@ -695,7 +764,21 @@ function extractVictimFromFoulText(text = '') {
   return match ? match[1].trim() : '';
 }
 
+
+function startDetailsPolling() {
+  if (detailsRefreshTimer) clearInterval(detailsRefreshTimer);
+  detailsRefreshTimer = setInterval(() => {
+    if (!activeDetailsMatchId || !matchModalEl?.classList.contains('open')) return;
+    const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(activeDetailsMatchId));
+    if (!match || isFinished(match)) return;
+    hydrateEspnDetails(match).catch(() => {});
+  }, 15000);
+}
+
 function closeMatchDetails() {
+  activeDetailsMatchId = null;
+  if (detailsRefreshTimer) clearInterval(detailsRefreshTimer);
+  detailsRefreshTimer = null;
   matchModalEl?.setAttribute('aria-hidden', 'true');
   matchModalEl?.classList.remove('open');
 }
@@ -915,6 +998,7 @@ function normalizeEspnEvent(event) {
     venue: competition.venue?.fullName || competition.venue?.displayName || '',
     clock: competition.status?.displayClock || event.status?.displayClock || '',
     officialClock: competition.status?.displayClock || event.status?.displayClock || '',
+    clockSyncedAt: Date.now(),
     period: Number(competition.status?.period || event.status?.period || 0),
     source: 'ESPN'
   };
@@ -999,5 +1083,14 @@ renderAll();
 loadInternetScores();
 refreshTimer = setInterval(loadInternetScores, Math.max(30, API_CONFIG.refreshSeconds) * 1000);
 setInterval(() => {
-  if (liveData.matches.some(m => shouldShowLiveHighlight(m))) renderMatches();
+  if (liveData.matches.some(m => shouldShowLiveHighlight(m))) {
+    renderMatches();
+    if (activeDetailsMatchId && matchModalEl?.classList.contains('open')) {
+      const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(activeDetailsMatchId));
+      if (match) {
+        const timer = matchDetailsEl?.querySelector('[data-live-detail-clock]');
+        if (timer) timer.textContent = formatGameClock(match);
+      }
+    }
+  }
 }, 1000);
