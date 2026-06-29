@@ -126,3 +126,16 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
   text-align: center;
   padding: 24px;
 }
+
+
+.match-card.upcoming .score-line b {
+  color: var(--muted);
+}
+
+.match-card.live .score-line b {
+  color: var(--green);
+}
+
+.match-card.finished .score-line b {
+  color: var(--gold);
+}

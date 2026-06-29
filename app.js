@@ -8,7 +8,7 @@ const filterButtons = [...document.querySelectorAll('.filter')];
 const syncStatusEl = document.querySelector('#syncStatus');
 const refreshScoresBtn = document.querySelector('#refreshScores');
 
-let currentFilter = 'all';
+let currentFilter = 'upcoming';
 let liveData = structuredClone(COPA_DATA);
 let refreshTimer = null;
 
@@ -143,9 +143,24 @@ function matchCard(match) {
   </article>`;
 }
 
+function getOrderedMatches() {
+  const byDateAsc = (a, b) => new Date(a.date) - new Date(b.date);
+  const byDateDesc = (a, b) => new Date(b.date) - new Date(a.date);
+
+  if (currentFilter === 'finished') {
+    return [...liveData.matches].filter(isFinished).sort(byDateDesc);
+  }
+
+  if (currentFilter === 'upcoming') {
+    return [...liveData.matches].filter(m => !isFinished(m)).sort(byDateAsc);
+  }
+
+  return [...liveData.matches].sort(byDateAsc);
+}
+
 function renderMatches() {
   const ordered = [...liveData.matches].sort((a, b) => new Date(a.date) - new Date(b.date));
-  const filtered = ordered.filter(m => currentFilter === 'all' || (currentFilter === 'finished' ? isFinished(m) : !isFinished(m)));
+  const filtered = getOrderedMatches();
   matchesEl.innerHTML = filtered.map(matchCard).join('') || '<p class="empty-state">Nenhum jogo encontrado.</p>';
 
   const next = ordered.find(m => !isFinished(m));
