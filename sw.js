@@ -1,4 +1,4 @@
-const CACHE_NAME = 'copa-v14';
+const CACHE_NAME = 'copa-v15';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)).catch(() => null));

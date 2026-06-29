@@ -504,84 +504,30 @@ function getForcedVerifiedDetails(match) {
         goals: 'Brasil 2 x 1 Japão'
       },
       sources: ['ESPN', 'The Guardian', 'Houston Chronicle']
+    },
+    '2026-06-29|alemanha|paraguai': {
+      venue: 'Gillette Stadium, Foxborough/Boston, EUA',
+      goals: [
+        { time: "42’", player: 'Julio Enciso', team: 'Paraguai' },
+        { time: "54’", player: 'Kai Havertz', team: 'Alemanha', assist: 'Florian Wirtz' }
+      ],
+      cards: [],
+      fouls: [],
+      stats: {
+        goals: 'Alemanha 1 x 1 Paraguai'
+      },
+      sources: ['The Times', 'The Guardian']
     }
   };
   if (known[key]) return known[key];
   return null;
 }
 
-const TEAM_EVENT_PROFILES = {
-  'brasil': { scorers: ['Casemiro', 'Gabriel Martinelli', 'Vinícius Júnior', 'Rodrygo', 'Neymar'], cards: ['Casemiro', 'Bruno Guimarães', 'Marquinhos'], fouls: ['Casemiro', 'Bruno Guimarães', 'Éder Militão'], victims: ['atacante adversário', 'meia adversário'] },
-  'japão': { scorers: ['Kaishu Sano', 'Takumi Minamino', 'Takefusa Kubo', 'Daichi Kamada'], cards: ['Kaishu Sano', 'Wataru Endo'], fouls: ['Wataru Endo', 'Ko Itakura'], victims: ['jogador adversário'] },
-  'alemanha': { scorers: ['Jamal Musiala', 'Florian Wirtz', 'Kai Havertz', 'Niclas Füllkrug'], cards: ['Antonio Rüdiger', 'Joshua Kimmich'], fouls: ['Joshua Kimmich', 'Antonio Rüdiger'], victims: ['atacante adversário'] },
-  'paraguai': { scorers: ['Miguel Almirón', 'Julio Enciso', 'Antonio Sanabria'], cards: ['Gustavo Gómez', 'Mathías Villasanti'], fouls: ['Gustavo Gómez', 'Mathías Villasanti'], victims: ['jogador adversário'] },
-  'canadá': { scorers: ['Jonathan David', 'Alphonso Davies', 'Cyle Larin'], cards: ['Stephen Eustáquio', 'Alistair Johnston'], fouls: ['Stephen Eustáquio', 'Alistair Johnston'], victims: ['jogador adversário'] },
-  'áfrica do sul': { scorers: ['Percy Tau', 'Evidence Makgopa', 'Teboho Mokoena'], cards: ['Teboho Mokoena', 'Mothobi Mvala'], fouls: ['Mothobi Mvala', 'Teboho Mokoena'], victims: ['jogador adversário'] },
-  'argentina': { scorers: ['Lionel Messi', 'Lautaro Martínez', 'Julián Álvarez', 'Ángel Di María'], cards: ['Rodrigo De Paul', 'Cristian Romero'], fouls: ['Rodrigo De Paul', 'Cristian Romero'], victims: ['jogador adversário'] },
-  'frança': { scorers: ['Kylian Mbappé', 'Antoine Griezmann', 'Olivier Giroud'], cards: ['Aurélien Tchouaméni', 'Dayot Upamecano'], fouls: ['Aurélien Tchouaméni', 'Dayot Upamecano'], victims: ['jogador adversário'] },
-  'inglaterra': { scorers: ['Harry Kane', 'Jude Bellingham', 'Bukayo Saka'], cards: ['Declan Rice', 'Kyle Walker'], fouls: ['Declan Rice', 'John Stones'], victims: ['jogador adversário'] },
-  'espanha': { scorers: ['Álvaro Morata', 'Dani Olmo', 'Lamine Yamal'], cards: ['Rodri', 'Dani Carvajal'], fouls: ['Rodri', 'Dani Carvajal'], victims: ['jogador adversário'] },
-  'portugal': { scorers: ['Cristiano Ronaldo', 'Bruno Fernandes', 'Rafael Leão'], cards: ['Pepe', 'João Palhinha'], fouls: ['João Palhinha', 'Pepe'], victims: ['jogador adversário'] },
-  'holanda': { scorers: ['Cody Gakpo', 'Memphis Depay', 'Xavi Simons'], cards: ['Virgil van Dijk', 'Denzel Dumfries'], fouls: ['Denzel Dumfries', 'Virgil van Dijk'], victims: ['jogador adversário'] },
-  'marrocos': { scorers: ['Hakim Ziyech', 'Youssef En-Nesyri', 'Achraf Hakimi'], cards: ['Sofyan Amrabat', 'Achraf Hakimi'], fouls: ['Sofyan Amrabat', 'Nayef Aguerd'], victims: ['jogador adversário'] }
-};
-
-function teamProfile(team) {
-  return TEAM_EVENT_PROFILES[normalizeTeamName(team || '').toLowerCase()] || {
-    scorers: ['Atacante principal', 'Meia ofensivo', 'Centroavante'],
-    cards: ['Volante', 'Zagueiro'],
-    fouls: ['Volante', 'Zagueiro'],
-    victims: ['jogador adversário']
-  };
-}
-
-function buildScoreBasedDetails(match) {
-  if (!isFinished(match) && !shouldShowLiveHighlight(match)) return {};
-  const details = { goals: [], cards: [], fouls: [], substitutions: [], stats: {}, sources: ['camada complementar de eventos'] };
-  const homeGoals = Math.max(0, Number(match.homeScore || 0));
-  const awayGoals = Math.max(0, Number(match.awayScore || 0));
-  const homeTimes = ['18’', '39’', '66’', '82’', '90+3’', '105+1’'];
-  const awayTimes = ['29’', '52’', '71’', '88’', '90+5’', '112’'];
-  const homeProfile = teamProfile(match.home);
-  const awayProfile = teamProfile(match.away);
-  for (let i = 0; i < homeGoals; i += 1) {
-    details.goals.push({ time: homeTimes[i] || 'tempo oficial', player: homeProfile.scorers[i % homeProfile.scorers.length], team: match.home });
-  }
-  for (let i = 0; i < awayGoals; i += 1) {
-    details.goals.push({ time: awayTimes[i] || 'tempo oficial', player: awayProfile.scorers[i % awayProfile.scorers.length], team: match.away });
-  }
-
-  details.cards = [
-    { time: '34’', player: homeProfile.cards[0], team: match.home, card: 'Cartão amarelo' },
-    { time: '58’', player: awayProfile.cards[0], team: match.away, card: 'Cartão amarelo' }
-  ];
-  if ((homeGoals + awayGoals) >= 3) details.cards.push({ time: '83’', player: awayProfile.cards[1] || awayProfile.cards[0], team: match.away, card: 'Cartão amarelo' });
-
-  details.fouls = [
-    { time: '22’', player: homeProfile.fouls[0], drawnBy: awayProfile.scorers[0] || 'jogador adversário', team: match.home },
-    { time: '41’', player: awayProfile.fouls[0], drawnBy: homeProfile.scorers[0] || 'jogador adversário', team: match.away },
-    { time: '73’', player: homeProfile.fouls[1] || homeProfile.fouls[0], drawnBy: awayProfile.scorers[1] || 'jogador adversário', team: match.home }
-  ];
-
-  details.substitutions = [
-    { time: '62’', in: homeProfile.scorers[2] || 'Jogador', out: homeProfile.scorers[0] || 'Jogador', team: match.home },
-    { time: '67’', in: awayProfile.scorers[2] || 'Jogador', out: awayProfile.scorers[0] || 'Jogador', team: match.away }
-  ];
-
-  details.stats = {
-    goals: `${match.home} ${homeGoals} x ${awayGoals} ${match.away}`,
-    fouls: `${match.home} ${details.fouls.filter(f => f.team === match.home).length + 8} x ${details.fouls.filter(f => f.team === match.away).length + 9} ${match.away}`,
-    yellowCards: `${match.home} ${details.cards.filter(c => c.team === match.home && /amarelo/i.test(c.card)).length} x ${details.cards.filter(c => c.team === match.away && /amarelo/i.test(c.card)).length} ${match.away}`,
-    redCards: `${match.home} ${details.cards.filter(c => /vermelho/i.test(c.card) && c.team === match.home).length} x ${details.cards.filter(c => /vermelho/i.test(c.card) && c.team === match.away).length} ${match.away}`
-  };
-  return details;
-}
-
 function forceDetailsWhenMissing(match, current = {}) {
+  // Nunca fabricar eventos de jogo. Só mescla dados já obtidos de APIs/fontes oficiais
+  // e correções verificadas manualmente para partidas específicas.
   const verified = getForcedVerifiedDetails(match);
-  const scoreBased = buildScoreBasedDetails(match);
-  let merged = mergeDetailPayloads(current || {}, verified || {});
-  merged = mergeDetailPayloads(merged, scoreBased || {});
+  const merged = mergeDetailPayloads(current || {}, verified || {});
   if (!merged.venue && match.venue) merged.venue = match.venue;
   return merged;
 }
@@ -594,12 +540,11 @@ function normalizeMatchFacts(match) {
   const substitutions = details.substitutions || match.substitutions || [];
   const stats = details.stats || match.stats || {};
   const sources = details.sources || [];
-  const enrichedGoals = goals.length ? goals : buildScoreBasedGoalPlaceholders(match);
   return {
-    venue: details.venue || match.venue || 'Estádio em sincronização com as fontes esportivas.',
+    venue: details.venue || match.venue || 'Estádio em sincronização com as fontes oficiais.',
     referee: details.referee || match.referee || '',
     attendance: details.attendance || match.attendance || '',
-    goals: enrichedGoals,
+    goals,
     cards,
     fouls,
     substitutions,
@@ -610,10 +555,6 @@ function normalizeMatchFacts(match) {
   };
 }
 
-
-function buildScoreBasedGoalPlaceholders(match) {
-  return buildScoreBasedDetails(match).goals || [];
-}
 
 function renderFactList(items, emptyText, type) {
   if (!items || !items.length) return `<li class="pending-detail live-syncing">${emptyText}</li>`;
@@ -631,7 +572,7 @@ function renderFactList(items, emptyText, type) {
 
 function renderStatsList(stats = {}) {
   const entries = Object.entries(stats).filter(([, value]) => value !== undefined && value !== null && value !== '');
-  if (!entries.length) return '<li class="pending-detail">Estatísticas detalhadas ainda não retornaram pelas fontes conectadas.</li>';
+  if (!entries.length) return '<li class="pending-detail">Estatísticas oficiais em sincronização.</li>';
   return entries.map(([key, value]) => `<li><b>${escapeHtml(labelStat(key))}</b> ${escapeHtml(value)}</li>`).join('');
 }
 
@@ -727,10 +668,10 @@ async function openMatchDetails(id) {
     <p><b>Estádio:</b> ${escapeHtml(facts.venue)}${facts.referee ? ` • <b>Árbitro:</b> ${escapeHtml(facts.referee)}` : ''}${facts.attendance ? ` • <b>Público:</b> ${escapeHtml(facts.attendance)}` : ''}</p>
     <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
     <div class="match-events-grid">
-      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'Sincronizando gols em tempo real com fontes esportivas...', 'goal')}</ul></section>
-      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'Sincronizando cartões em tempo real com fontes esportivas...', 'card')}</ul></section>
-      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'Sincronizando faltas em tempo real com fontes esportivas...', 'foul')}</ul></section>
-      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'Sincronizando substituições em tempo real com fontes esportivas...', 'sub')}</ul></section>
+      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'Sincronizando gols em tempo real com fontes oficiais...', 'goal')}</ul></section>
+      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'Sincronizando cartões em tempo real com fontes oficiais...', 'card')}</ul></section>
+      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'Sincronizando faltas em tempo real com fontes oficiais...', 'foul')}</ul></section>
+      <section><h3>Substituições</h3><ul>${renderFactList(facts.substitutions, facts.loading ? 'Buscando substituições em fontes alternativas...' : 'Sincronizando substituições em tempo real com fontes oficiais...', 'sub')}</ul></section>
       <section><h3>Estatísticas</h3><ul>${renderStatsList(facts.stats)}</ul></section>
     </div>
     <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'busca automática em ESPN, TheSportsDB, backend/proxy configurável e fontes públicas alternativas.'}</p>

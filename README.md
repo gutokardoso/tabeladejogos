@@ -17,3 +17,14 @@ Observação: se a fonte oficial não entregar segundos reais, nenhum front-end 
 - Em intervalo, pausa oficial, pênaltis ou jogo encerrado, o tempo para automaticamente.
 - Acréscimos oficiais como 45+4, 90+7, 105+2 e 120+1 são preservados quando retornados pela fonte.
 - A contagem local só é usada entre sincronizações oficiais e sempre respeita o limite do período atual.
+
+
+## Correção de eventos oficiais
+
+- Removida a geração automática/simulada de autores e minutos de gols.
+- Os detalhes dos jogos agora priorizam dados retornados por fontes oficiais/confiáveis: proxy configurável, ESPN Summary/Play-by-play/Scoreboard, TheSportsDB e Sofascore via proxy.
+- Quando houver correção verificada para um jogo específico, ela é mesclada sem sobrescrever dados oficiais mais completos.
+- Alemanha x Paraguai corrigido para:
+  - 42’ Gol de Julio Enciso • Paraguai
+  - 54’ Gol de Kai Havertz • Alemanha, assistência de Florian Wirtz
+- Para produção, configure `API_CONFIG.detailsProxyEndpoint` com um backend próprio ligado a uma API esportiva licenciada para garantir eventos completos em tempo real sem bloqueio de CORS.
