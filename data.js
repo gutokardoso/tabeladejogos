@@ -37,10 +37,10 @@ const COPA_DATA = {
     { date: '2026-06-27T16:00:00-03:00', stage: 'Grupo L', home: 'Panamá', away: 'Inglaterra', homeScore: 0, awayScore: 2, status: 'Finalizado' },
     { date: '2026-06-28T16:00:00-03:00', stage: 'Grupo J', home: 'Argentina', away: 'Jordânia', homeScore: 3, awayScore: 1, status: 'Finalizado' },
     { date: '2026-06-28T16:00:00-03:00', stage: 'Grupo J', home: 'Argélia', away: 'Áustria', homeScore: 3, awayScore: 3, status: 'Finalizado' },
-    { date: '2026-06-29T14:00:00-03:00', stage: 'Mata-mata', home: 'Brasil', away: 'Japão', status: 'Agendado' },
-    { date: '2026-06-30T14:00:00-03:00', stage: 'Mata-mata', home: 'Costa do Marfim', away: 'Noruega', status: 'Agendado' },
-    { date: '2026-07-01T13:00:00-03:00', stage: 'Mata-mata', home: 'Inglaterra', away: 'RD Congo', status: 'Agendado' },
-    { date: '2026-07-02T16:00:00-03:00', stage: 'Mata-mata', home: 'Espanha', away: 'Áustria', status: 'Agendado' },
-    { date: '2026-07-02T16:00:00-03:00', stage: 'Mata-mata', home: 'Argentina', away: 'Cabo Verde', status: 'Agendado' }
+    { date: '2026-06-29T14:00:00-03:00', stage: '16 avos', home: 'Brasil', away: 'Japão', status: 'Agendado' },
+    { date: '2026-06-30T14:00:00-03:00', stage: '16 avos', home: 'Costa do Marfim', away: 'Noruega', status: 'Agendado' },
+    { date: '2026-07-01T13:00:00-03:00', stage: '16 avos', home: 'Inglaterra', away: 'RD Congo', status: 'Agendado' },
+    { date: '2026-07-02T16:00:00-03:00', stage: '16 avos', home: 'Espanha', away: 'Áustria', status: 'Agendado' },
+    { date: '2026-07-02T16:00:00-03:00', stage: '16 avos', home: 'Argentina', away: 'Cabo Verde', status: 'Agendado' }
   ]
 };

@@ -87,7 +87,15 @@ function translateStage(stage = '') {
     semifinal: 'Semifinal',
     final: 'Final',
     '3rd place playoff': 'Disputa pelo 3º lugar',
-    knockout: 'Mata-mata'
+    'third place playoff': 'Disputa pelo 3º lugar',
+    'round 32': '16 avos',
+    'round of 32': '16 avos',
+    'round 16': 'Oitavas',
+    'round of 16': 'Oitavas',
+    'mata mata': '16 avos',
+    'mata-mata': '16 avos',
+    knockout: '16 avos',
+    'knockout stage': '16 avos'
   };
   if (!raw) return 'Copa do Mundo';
   return map[raw.toLowerCase()] || map[normalized] || raw;
@@ -218,7 +226,7 @@ function getOrderedMatches() {
     return [...liveData.matches].filter(m => !isFinished(m)).sort(byDateAsc);
   }
 
-  return [...liveData.matches].sort(byDateAsc);
+  return [...liveData.matches].sort(byDateDesc);
 }
 
 function renderMatches() {
