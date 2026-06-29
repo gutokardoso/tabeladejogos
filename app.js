@@ -29,9 +29,46 @@ function normalizeTeamName(name = '') {
   const map = {
     Brazil: 'Brasil', France: 'França', England: 'Inglaterra', Spain: 'Espanha', Japan: 'Japão',
     Norway: 'Noruega', Morocco: 'Marrocos', Switzerland: 'Suíça', 'Ivory Coast': 'Costa do Marfim',
-    'Côte d’Ivoire': 'Costa do Marfim', 'Cape Verde': 'Cabo Verde'
+    'Côte d’Ivoire': 'Costa do Marfim', 'Cote d’Ivoire': 'Costa do Marfim', 'Cote d\'Ivoire': 'Costa do Marfim',
+    'Cape Verde': 'Cabo Verde', Algeria: 'Argélia', Austria: 'Áustria', Panama: 'Panamá', Jordan: 'Jordânia',
+    'DR Congo': 'RD Congo', 'Congo DR': 'RD Congo', Germany: 'Alemanha', Paraguay: 'Paraguai',
+    Netherlands: 'Holanda', 'United States': 'Estados Unidos', USA: 'Estados Unidos', Canada: 'Canadá',
+    Uruguay: 'Uruguai', Mexico: 'México', Ecuador: 'Equador', Belgium: 'Bélgica', Senegal: 'Senegal',
+    Portugal: 'Portugal', Croatia: 'Croácia', Australia: 'Austrália', Egypt: 'Egito', Ghana: 'Gana',
+    Sweden: 'Suécia', Korea: 'Coreia do Sul', 'South Korea': 'Coreia do Sul', 'Saudi Arabia': 'Arábia Saudita'
   };
   return map[name] || name;
+}
+
+function translateStatus(status = '') {
+  const raw = String(status || '').trim();
+  const normalized = raw.toLowerCase();
+  const map = {
+    scheduled: 'Agendado', pre: 'Agendado', postponed: 'Adiado', canceled: 'Cancelado', cancelled: 'Cancelado',
+    final: 'Finalizado', fulltime: 'Finalizado', finished: 'Finalizado', complete: 'Finalizado', completed: 'Finalizado',
+    halftime: 'Intervalo', 'half time': 'Intervalo', live: 'Ao vivo', 'in progress': 'Ao vivo',
+    delayed: 'Atrasado', suspended: 'Suspenso', abandoned: 'Abandonado', extra: 'Prorrogação',
+    penalties: 'Pênaltis', penalty: 'Pênaltis'
+  };
+  if (!raw) return 'Agendado';
+  if (map[normalized]) return map[normalized];
+  if (/final|complete|finished|full time/i.test(raw)) return 'Finalizado';
+  if (/scheduled|pre|not started/i.test(raw)) return 'Agendado';
+  if (/live|progress|1st|2nd|first|second/i.test(raw)) return 'Ao vivo';
+  if (/half/i.test(raw)) return 'Intervalo';
+  return raw;
+}
+
+function translateStage(stage = '') {
+  const raw = String(stage || '').trim();
+  const map = {
+    'fifa.world': 'Copa do Mundo', 'regular season': 'Fase de grupos', group: 'Fase de grupos',
+    'group stage': 'Fase de grupos', 'round of 32': '16 avos de final', 'round of 16': 'Oitavas de final',
+    quarterfinal: 'Quartas de final', semifinals: 'Semifinal', semifinal: 'Semifinal', final: 'Final',
+    '3rd place playoff': 'Disputa pelo 3º lugar', knockout: 'Mata-mata'
+  };
+  if (!raw) return 'Copa do Mundo';
+  return map[raw.toLowerCase()] || raw;
 }
 
 function teamForm(team) {
@@ -108,29 +145,31 @@ function rankingItem(position, team, score, label) {
 
 function matchCard(match) {
   const scoreText = Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) ? `${match.homeScore} × ${match.awayScore}` : null;
+  const stage = translateStage(match.stage);
+  const status = translateStatus(match.status);
 
   if (isFinished(match)) {
     const winner = match.homeScore === match.awayScore ? 'Empate' : match.homeScore > match.awayScore ? match.home : match.away;
     return `<article class="match-card finished">
-      <div class="match-top"><span>${match.stage}</span><time>${formatDate(match.date)}</time></div>
+      <div class="match-top"><span>${stage}</span><time>${formatDate(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${scoreText}</b><strong>${match.away}</strong></div>
       <p class="result-text">Resultado: ${winner}</p>
-      <small>${match.status || 'Finalizado'}${match.source ? ` • ${match.source}` : ''}</small>
+      <small>${status || 'Finalizado'}${match.source ? ` • ${match.source}` : ''}</small>
     </article>`;
   }
 
   if (isLive(match) && scoreText) {
     return `<article class="match-card live">
-      <div class="match-top"><span>${match.stage}</span><time>${formatDate(match.date)}</time></div>
+      <div class="match-top"><span>${stage}</span><time>${formatDate(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${scoreText}</b><strong>${match.away}</strong></div>
-      <p class="prediction"><b>Ao vivo:</b> ${match.status}</p>
+      <p class="prediction"><b>Ao vivo:</b> ${status}</p>
       <small>Placar atualizado automaticamente pela internet.</small>
     </article>`;
   }
 
   const p = predict(match);
   return `<article class="match-card upcoming">
-    <div class="match-top"><span>${match.stage}</span><time>${formatDate(match.date)}</time></div>
+    <div class="match-top"><span>${stage}</span><time>${formatDate(match.date)}</time></div>
     <div class="score-line"><strong>${match.home}</strong><b>${p.homeGoals} × ${p.awayGoals}</b><strong>${match.away}</strong></div>
     <p class="prediction"><b>Previsão:</b> ${p.winner}</p>
     <div class="probabilities">
@@ -230,12 +269,12 @@ function normalizeEspnEvent(event) {
   return {
     id: event.id,
     date: event.date,
-    stage: event.season?.slug || event.shortName || 'Copa do Mundo',
+    stage: translateStage(event.season?.slug || event.shortName || 'Copa do Mundo'),
     home: normalizeTeamName(home.team?.displayName || home.team?.shortDisplayName),
     away: normalizeTeamName(away.team?.displayName || away.team?.shortDisplayName),
     homeScore: home.score !== undefined && home.score !== '' ? Number(home.score) : undefined,
     awayScore: away.score !== undefined && away.score !== '' ? Number(away.score) : undefined,
-    status: completed ? 'Finalizado' : statusName,
+    status: completed ? 'Finalizado' : translateStatus(statusName),
     source: 'ESPN'
   };
 }
@@ -251,12 +290,12 @@ async function fetchFootballDataMatches() {
   return (data.matches || []).map(m => ({
     id: m.id,
     date: m.utcDate,
-    stage: m.stage || m.group || 'Copa do Mundo',
+    stage: translateStage(m.stage || m.group || 'Copa do Mundo'),
     home: normalizeTeamName(m.homeTeam?.shortName || m.homeTeam?.name),
     away: normalizeTeamName(m.awayTeam?.shortName || m.awayTeam?.name),
     homeScore: Number.isInteger(m.score?.fullTime?.home) ? m.score.fullTime.home : undefined,
     awayScore: Number.isInteger(m.score?.fullTime?.away) ? m.score.fullTime.away : undefined,
-    status: m.status === 'FINISHED' ? 'Finalizado' : m.status,
+    status: translateStatus(m.status),
     source: 'football-data.org'
   })).filter(m => m.home && m.away);
 }
