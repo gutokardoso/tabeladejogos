@@ -20,6 +20,23 @@ function isLive(match) {
   return /live|in progress|intervalo|1º|2º|andamento/i.test(match.status || '');
 }
 
+function hasDefinedTeams(match) {
+  const names = [match.home, match.away].map(name => String(name || '').trim().toLowerCase());
+  if (names.some(name => !name)) return false;
+  return !names.some(name => (
+    name.includes('tbd') ||
+    name.includes('winner') ||
+    name.includes('loser') ||
+    name.includes('vencedor') ||
+    name.includes('perdedor') ||
+    name.includes('a definir') ||
+    name.includes('à definir') ||
+    name.includes('aguardando') ||
+    name.includes('round of') ||
+    name.includes('match ')
+  ));
+}
+
 function minutesUntilKickoff(match) {
   const kickoff = new Date(match.date);
   if (Number.isNaN(kickoff.getTime())) return Infinity;
@@ -144,9 +161,10 @@ function predict(match) {
 }
 
 function renderSummary() {
-  const finished = liveData.matches.filter(isFinished);
-  const upcoming = liveData.matches.filter(m => !isFinished(m));
-  const live = liveData.matches.filter(isLive);
+  const visibleMatches = liveData.matches.filter(hasDefinedTeams);
+  const finished = visibleMatches.filter(isFinished);
+  const upcoming = visibleMatches.filter(m => !isFinished(m));
+  const live = visibleMatches.filter(isLive);
   const goals = finished.reduce((sum, m) => sum + m.homeScore + m.awayScore, 0);
   summaryEl.innerHTML = `
     <div><strong>${finished.length}</strong><span>jogos finalizados</span></div>
@@ -157,7 +175,7 @@ function renderSummary() {
 }
 
 function renderRankings() {
-  const teams = [...new Set([...Object.keys(liveData.teams), ...liveData.matches.flatMap(m => [m.home, m.away])])]
+  const teams = [...new Set([...Object.keys(liveData.teams), ...liveData.matches.filter(hasDefinedTeams).flatMap(m => [m.home, m.away])])]
     .map(team => ({ team, score: powerScore(team), form: teamForm(team) }));
   const favorites = [...teams].sort((a, b) => b.score - a.score).slice(0, 3);
   const surprises = [...teams]
@@ -218,19 +236,21 @@ function getOrderedMatches() {
   const byDateAsc = (a, b) => new Date(a.date) - new Date(b.date);
   const byDateDesc = (a, b) => new Date(b.date) - new Date(a.date);
 
+  const visibleMatches = [...liveData.matches].filter(hasDefinedTeams);
+
   if (currentFilter === 'finished') {
-    return [...liveData.matches].filter(isFinished).sort(byDateDesc);
+    return visibleMatches.filter(isFinished).sort(byDateDesc);
   }
 
   if (currentFilter === 'upcoming') {
-    return [...liveData.matches].filter(m => !isFinished(m)).sort(byDateAsc);
+    return visibleMatches.filter(m => !isFinished(m)).sort(byDateAsc);
   }
 
-  return [...liveData.matches].sort(byDateDesc);
+  return visibleMatches.sort(byDateDesc);
 }
 
 function renderMatches() {
-  const ordered = [...liveData.matches].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const ordered = [...liveData.matches].filter(hasDefinedTeams).sort((a, b) => new Date(a.date) - new Date(b.date));
   const filtered = getOrderedMatches();
   matchesEl.innerHTML = filtered.map(matchCard).join('') || '<p class="empty-state">Nenhum jogo encontrado.</p>';
 
