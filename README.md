@@ -1,9 +1,9 @@
-# Tabela de Jogos | Copa do Mundo 2026
+# App Copa — previsões e detalhes enriquecidos
 
-App web em português brasileiro com placares ao vivo, previsões inteligentes, TOP 3 favoritos, possíveis surpresas, resumo do dia, chave da Copa, busca por seleção, detalhes por partida, compartilhamento e instalação como PWA.
+Atualização aplicada:
+- A tela de detalhes não depende mais de uma única resposta de API para gols/cartões/faltas.
+- Ao abrir um jogo, o app tenta enriquecer os detalhes em múltiplas fontes públicas: ESPN Summary, ESPN Play-by-Play e TheSportsDB.
+- A mensagem antiga “Nenhum gol informado pela API até agora.” foi removida.
+- Quando não houver detalhe individual disponível, o app informa que as fontes conectadas ainda não retornaram autor/minuto, em vez de afirmar que não existe gol.
 
-## Atualização de placares
-O app usa ESPN por padrão e atualiza automaticamente a cada 60 segundos. Caso a API falhe, utiliza a base local em `data.js`.
-
-## PWA
-Abra o app no navegador e use “Adicionar à tela inicial” para instalar no celular.
+Observação: algumas informações detalhadas podem depender da disponibilidade/cobertura da fonte pública e de CORS. Para produção comercial, recomenda-se conectar um backend/proxy com API esportiva oficial.

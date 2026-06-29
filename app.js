@@ -251,16 +251,20 @@ function normalizeMatchFacts(match) {
   const goals = details.goals || match.goals || [];
   const cards = details.cards || match.cards || [];
   const fouls = details.fouls || match.fouls || [];
+  const sources = details.sources || [];
   return {
-    venue: details.venue || match.venue || 'Informação não disponível na API.',
+    venue: details.venue || match.venue || 'Estádio ainda não localizado nas fontes conectadas.',
     goals,
     cards,
-    fouls
+    fouls,
+    sources,
+    loading: Boolean(match.detailsLoading),
+    loaded: Boolean(match.detailsLoaded)
   };
 }
 
 function renderFactList(items, emptyText, type) {
-  if (!items || !items.length) return `<li>${emptyText}</li>`;
+  if (!items || !items.length) return `<li class="pending-detail">${emptyText}</li>`;
   return items.map(item => {
     const time = item.time || item.minute || item.clock || '';
     const player = item.player || item.athlete || item.scorer || 'Jogador não informado';
@@ -306,11 +310,11 @@ async function openMatchDetails(id) {
       <div><strong>${match.away}</strong><span>${getTeamStatsLine(match.away)}</span><small>Chance: ${p.awayChance}%</small></div>
     </div>
     <div class="match-events-grid">
-      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, 'Nenhum gol informado pela API até agora.', 'goal')}</ul></section>
-      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, 'Nenhum cartão informado pela API até agora.', 'card')}</ul></section>
-      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, 'Nenhuma falta individual informada pela API até agora.', 'foul')}</ul></section>
+      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'As fontes conectadas ainda não retornaram autor/minuto dos gols para este jogo.', 'goal')}</ul></section>
+      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'As fontes conectadas ainda não retornaram cartões individuais para este jogo.', 'card')}</ul></section>
+      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, facts.loading ? 'Buscando faltas em fontes alternativas...' : 'As fontes conectadas ainda não retornaram faltas individuais para este jogo.', 'foul')}</ul></section>
     </div>
-    <p class="details-note">As informações de estádio, gols, cartões e faltas são exibidas quando a API fornece esses dados específicos do jogo. Caso a API não envie algum detalhe, o campo fica sinalizado como não disponível.</p>
+    <p class="details-note">Fonte dos detalhes: ${facts.sources.length ? facts.sources.map(escapeHtml).join(', ') : 'busca automática em ESPN e fontes públicas alternativas configuradas no app.'}</p>
     <button class="share-btn" type="button" data-share-id="${matchIdentifier(match)}">Compartilhar previsão</button>
   `;
   matchModalEl.setAttribute('aria-hidden', 'false');
@@ -319,36 +323,168 @@ async function openMatchDetails(id) {
 }
 
 async function hydrateEspnDetails(match) {
-  if (!match.id || match.source !== 'ESPN') return;
-  const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${match.id}`, { cache: 'no-store' });
-  if (!response.ok) return;
-  const data = await response.json();
-  const competition = data.header?.competitions?.[0] || data.boxscore?.gamepackageJSON?.header?.competitions?.[0];
-  const venue = competition?.venue?.fullName || competition?.venue?.displayName || data.gameInfo?.venue?.fullName || data.gameInfo?.venue?.displayName;
-  const goals = (data.scoringPlays || []).map(play => ({
-    time: play.clock?.displayValue || play.time?.displayValue || play.period?.displayValue || '',
-    player: play.athletes?.[0]?.displayName || play.participants?.[0]?.athlete?.displayName || play.text || 'Jogador não informado',
-    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
-  }));
-  const cards = (data.plays || []).filter(play => /yellow|red|cartão|card/i.test(play.type?.text || play.text || '')).map(play => ({
-    time: play.clock?.displayValue || '',
-    player: play.participants?.[0]?.athlete?.displayName || play.athletes?.[0]?.displayName || 'Jogador não informado',
-    team: normalizeTeamName(play.team?.displayName || play.team?.name || ''),
-    card: /red|vermelho/i.test(play.type?.text || play.text || '') ? 'Cartão vermelho' : 'Cartão amarelo'
-  }));
-  const fouls = (data.plays || []).filter(play => /foul|falta/i.test(play.type?.text || play.text || '')).slice(0, 12).map(play => ({
-    time: play.clock?.displayValue || '',
-    player: play.participants?.[0]?.athlete?.displayName || play.athletes?.[0]?.displayName || 'Jogador não informado',
-    drawnBy: play.participants?.[1]?.athlete?.displayName || '',
-    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
-  }));
-  match.details = { venue: venue || match.venue, goals, cards, fouls };
-  match.detailsLoaded = true;
-  if (matchModalEl?.classList.contains('open') && String(matchIdentifier(match)) === String(matchIdentifier(liveData.matches.find(m => String(matchIdentifier(m)) === String(matchIdentifier(match))) || match))) {
+  if (!match.id && !match.home) return;
+  match.detailsLoading = true;
+  try {
+    const collected = await fetchMatchDetailsFromAllSources(match);
+    match.details = mergeDetailPayloads(match.details || {}, collected);
+    match.detailsLoaded = true;
+  } finally {
+    match.detailsLoading = false;
+  }
+  if (matchModalEl?.classList.contains('open')) {
     const currentId = matchIdentifier(match);
     const modalTitle = matchDetailsEl?.querySelector('h2')?.textContent || '';
     if (modalTitle.includes(match.home) && modalTitle.includes(match.away)) openMatchDetails(currentId);
   }
+}
+
+async function fetchMatchDetailsFromAllSources(match) {
+  const sources = [];
+  const payloads = [];
+
+  const attempts = [
+    ['ESPN Summary', () => fetchEspnSummaryDetails(match)],
+    ['ESPN Plays', () => fetchEspnPlayByPlayDetails(match)],
+    ['TheSportsDB', () => fetchTheSportsDbDetails(match)]
+  ];
+
+  for (const [sourceName, loader] of attempts) {
+    try {
+      const result = await loader();
+      if (result && hasUsefulDetails(result)) {
+        result.sources = [...(result.sources || []), sourceName];
+        payloads.push(result);
+        sources.push(sourceName);
+      }
+    } catch (_) {}
+  }
+
+  const merged = payloads.reduce((acc, item) => mergeDetailPayloads(acc, item), { sources: [] });
+  merged.sources = [...new Set([...(merged.sources || []), ...sources])];
+  return merged;
+}
+
+function hasUsefulDetails(details = {}) {
+  return Boolean(details.venue || details.goals?.length || details.cards?.length || details.fouls?.length);
+}
+
+function mergeDetailPayloads(base = {}, extra = {}) {
+  return {
+    venue: extra.venue || base.venue,
+    goals: uniqueEvents([...(base.goals || []), ...(extra.goals || [])]),
+    cards: uniqueEvents([...(base.cards || []), ...(extra.cards || [])]),
+    fouls: uniqueEvents([...(base.fouls || []), ...(extra.fouls || [])]).slice(0, 20),
+    sources: [...new Set([...(base.sources || []), ...(extra.sources || [])])]
+  };
+}
+
+function uniqueEvents(items = []) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = `${item.time || item.minute || item.clock || ''}|${item.player || item.athlete || item.scorer || ''}|${item.team || ''}|${item.card || item.type || ''}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchEspnSummaryDetails(match) {
+  if (!match.id || match.source !== 'ESPN') return null;
+  const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${match.id}`, { cache: 'no-store' });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return parseEspnDetailPayload(data, match);
+}
+
+async function fetchEspnPlayByPlayDetails(match) {
+  if (!match.id || match.source !== 'ESPN') return null;
+  const response = await fetch(`https://site.web.api.espn.com/apis/site/v2/sports/soccer/fifa.world/playbyplay?event=${match.id}`, { cache: 'no-store' });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return parseEspnDetailPayload(data, match);
+}
+
+function parseEspnDetailPayload(data, match) {
+  const competition = data.header?.competitions?.[0] || data.boxscore?.gamepackageJSON?.header?.competitions?.[0] || data.gamepackageJSON?.header?.competitions?.[0];
+  const venue = competition?.venue?.fullName || competition?.venue?.displayName || data.gameInfo?.venue?.fullName || data.gameInfo?.venue?.displayName;
+  const allPlays = [...(data.scoringPlays || []), ...(data.plays || []), ...(data.gamepackageJSON?.plays || [])];
+  const goals = uniqueEvents([
+    ...(data.scoringPlays || []).map(play => espnGoal(play)),
+    ...allPlays.filter(play => /goal|gol/i.test(play.type?.text || play.text || '')).map(play => espnGoal(play))
+  ].filter(Boolean));
+  const cards = allPlays.filter(play => /yellow|red|cartão|card|vermelho|amarelo/i.test(play.type?.text || play.text || '')).map(play => ({
+    time: play.clock?.displayValue || play.time?.displayValue || '',
+    player: play.participants?.[0]?.athlete?.displayName || play.athletes?.[0]?.displayName || extractPlayerFromText(play.text) || 'Jogador não informado',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || ''),
+    card: /red|vermelho/i.test(play.type?.text || play.text || '') ? 'Cartão vermelho' : 'Cartão amarelo'
+  }));
+  const fouls = allPlays.filter(play => /foul|falta/i.test(play.type?.text || play.text || '')).map(play => ({
+    time: play.clock?.displayValue || play.time?.displayValue || '',
+    player: play.participants?.[0]?.athlete?.displayName || play.athletes?.[0]?.displayName || extractPlayerFromText(play.text) || 'Jogador não informado',
+    drawnBy: play.participants?.[1]?.athlete?.displayName || extractVictimFromFoulText(play.text) || '',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
+  }));
+  return { venue, goals, cards, fouls };
+}
+
+function espnGoal(play) {
+  if (!play) return null;
+  return {
+    time: play.clock?.displayValue || play.time?.displayValue || play.period?.displayValue || '',
+    player: play.athletes?.[0]?.displayName || play.participants?.[0]?.athlete?.displayName || extractPlayerFromText(play.text) || 'Jogador não informado',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
+  };
+}
+
+async function fetchTheSportsDbDetails(match) {
+  const dateKey = new Date(match.date).toISOString().slice(0, 10);
+  const queries = [`${match.home}_vs_${match.away}`, `${match.away}_vs_${match.home}`];
+  for (const q of queries) {
+    const url = `https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q)}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) continue;
+    const data = await response.json();
+    const event = (data.event || []).find(ev => (ev.dateEvent || '').slice(0, 10) === dateKey) || (data.event || [])[0];
+    if (!event) continue;
+    const goals = parseTheSportsDbGoals(event, match);
+    const cards = parseTheSportsDbCards(event, match);
+    const venue = event.strVenue || event.strCity || '';
+    return { venue, goals, cards, fouls: [] };
+  }
+  return null;
+}
+
+function parseTheSportsDbGoals(event, match) {
+  const homeGoals = parseMultilineEvents(event.strHomeGoalDetails, match.home);
+  const awayGoals = parseMultilineEvents(event.strAwayGoalDetails, match.away);
+  return [...homeGoals, ...awayGoals].map(item => ({ time: item.time, player: item.player, team: item.team }));
+}
+
+function parseTheSportsDbCards(event, match) {
+  const homeCards = parseMultilineEvents(event.strHomeRedCards || event.strHomeYellowCards, match.home, 'Cartão');
+  const awayCards = parseMultilineEvents(event.strAwayRedCards || event.strAwayYellowCards, match.away, 'Cartão');
+  return [...homeCards, ...awayCards].map(item => ({ time: item.time, player: item.player, team: item.team, card: item.type }));
+}
+
+function parseMultilineEvents(value, team, type = '') {
+  if (!value) return [];
+  return String(value).split(/[;\n]/).map(entry => entry.trim()).filter(Boolean).map(entry => {
+    const timeMatch = entry.match(/(\d{1,3})['’:]?/);
+    const clean = entry.replace(/(\d{1,3})['’:]?/, '').replace(/\(.*?\)/g, '').trim();
+    return { time: timeMatch ? `${timeMatch[1]}’` : '', player: clean || 'Jogador não informado', team, type };
+  });
+}
+
+function extractPlayerFromText(text = '') {
+  const clean = String(text || '').replace(/Goal!|Gol!|Yellow Card|Red Card|Cartão amarelo|Cartão vermelho/gi, '').trim();
+  const beforeParen = clean.split('(')[0].trim();
+  return beforeParen || '';
+}
+
+function extractVictimFromFoulText(text = '') {
+  const match = String(text || '').match(/foul.*?on\s+([^.,]+)/i) || String(text || '').match(/falta.*?em\s+([^.,]+)/i);
+  return match ? match[1].trim() : '';
 }
 
 function closeMatchDetails() {
