@@ -259,7 +259,13 @@ function rankingItem(position, team, score, label) {
 
 function matchStatusText(match) {
   if (isFinished(match)) return 'Encerrado';
-  if (isLive(match)) return translateStatus(match.status);
+  if (isLive(match)) {
+    const raw = `${match.status || ''} ${match.statusDetail || ''} ${match.statusName || ''}`.toLowerCase();
+    if (/intervalo|halftime|half time/.test(raw)) return 'Intervalo';
+    if (/penalt|pênalt|shootout/.test(raw)) return 'Pênaltis';
+    if (/extra|prorroga|overtime/.test(raw)) return 'Prorrogação';
+    return 'Ao vivo';
+  }
   const minutes = minutesUntilKickoff(match);
   if (minutes > 0 && minutes <= 30) return `Começa em ${Math.ceil(minutes)} min`;
   return translateStatus(match.status);
@@ -302,6 +308,16 @@ function parseClockToSeconds(clock) {
   return null;
 }
 
+function clockHasSeconds(clock) {
+  const raw = String(clock || '').trim();
+  return /^(\d{1,2}:)?\d{1,3}:\d{2}/.test(raw);
+}
+
+function looksLikeClockOnly(value = '') {
+  const raw = String(value || '').trim();
+  return /^(\d{1,3})(\+\d{1,2})?['’]?$/.test(raw) || /^\d{1,3}:\d{2}$/.test(raw);
+}
+
 function isExtraTime(match) {
   const status = String(match.status || '').toLowerCase();
   return Number(match.period || 0) >= 3 || /extra|prorroga|et|1st extra|2nd extra|tempo extra/.test(status);
@@ -317,13 +333,54 @@ function clockMaxFor(match) {
   return 90;
 }
 
+function liveClockStorageKey(match) {
+  return `copa-live-clock:${matchIdentifier(match)}`;
+}
+
+function normalizeClockPayload(match) {
+  const clock = String(match.officialClock || match.clock || match.gameClock || '').trim();
+  return `${clock}|${match.period || ''}|${match.status || ''}|${match.statusState || ''}`;
+}
+
+function hydratePersistentClockSync(match) {
+  if (!isLive(match) || isFinished(match)) return;
+  const rawClock = match.officialClock || match.clock || match.gameClock;
+  const apiSeconds = parseClockToSeconds(rawClock);
+  if (apiSeconds === null) return;
+
+  const payload = normalizeClockPayload(match);
+  const key = liveClockStorageKey(match);
+  const now = Date.now();
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) || 'null');
+    if (stored && stored.payload === payload && Number(stored.syncedAt)) {
+      match.clockSyncedAt = stored.syncedAt;
+      return;
+    }
+
+    // Se a API só informa minuto cheio (ex.: 14'), não temos os segundos reais.
+    // Para não zerar ao dar refresh, alinhamos o segundo ao relógio do dispositivo.
+    // Quando a API trouxer mm:ss, usamos o instante exato da sincronização.
+    const syncedAt = clockHasSeconds(rawClock)
+      ? Number(match.clockSyncedAt || now)
+      : now - (new Date().getSeconds() * 1000);
+
+    match.clockSyncedAt = syncedAt;
+    localStorage.setItem(key, JSON.stringify({ payload, syncedAt, savedAt: now }));
+  } catch {
+    match.clockSyncedAt = clockHasSeconds(rawClock) ? Number(match.clockSyncedAt || now) : now - (new Date().getSeconds() * 1000);
+  }
+}
+
 function formatGameClock(match) {
+  hydratePersistentClockSync(match);
   const officialClock = match.officialClock || match.clock || match.gameClock;
   const apiSeconds = parseClockToSeconds(officialClock);
   if (apiSeconds !== null) {
-    const syncedAt = Number(match.clockSyncedAt || match.details?.clockSyncedAt || 0);
-    const shouldTick = isLive(match) && !isFinished(match) && !/intervalo|halftime|half time|penalt|pênalt/i.test(String(match.status || ''));
-    const extraSeconds = shouldTick && syncedAt ? Math.max(0, Math.floor((Date.now() - syncedAt) / 1000)) : 0;
+    const syncedAt = Number(match.clockSyncedAt || match.details?.clockSyncedAt || Date.now());
+    const shouldTick = isLive(match) && !isFinished(match) && !/intervalo|halftime|half time|penalt|pênalt/i.test(String(match.status || '') + ' ' + String(match.statusDetail || ''));
+    const extraSeconds = shouldTick ? Math.max(0, Math.floor((Date.now() - syncedAt) / 1000)) : 0;
     return formatClockParts(apiSeconds + extraSeconds, clockMaxFor(match));
   }
 
@@ -526,7 +583,12 @@ async function hydrateEspnDetails(match) {
       const sameClock = String(match.officialClock || match.clock || '') === String(match.details.clock);
       match.clock = match.details.clock;
       match.officialClock = match.details.clock;
-      if (!sameClock || !match.clockSyncedAt) match.clockSyncedAt = Date.now();
+      if (sameClock && match.clockSyncedAt) {
+        // mantém sincronização persistente
+      } else {
+        match.clockSyncedAt = undefined;
+        hydratePersistentClockSync(match);
+      }
     }
     match.detailsLoaded = true;
   } finally {
@@ -581,7 +643,7 @@ function mergeDetailPayloads(base = {}, extra = {}) {
     referee: extra.referee || base.referee,
     attendance: extra.attendance || base.attendance,
     clock: extra.clock || base.clock,
-    clockSyncedAt: extra.clock ? Date.now() : (base.clockSyncedAt || undefined),
+    clockSyncedAt: base.clockSyncedAt || undefined,
     goals: uniqueEvents([...(base.goals || []), ...(extra.goals || [])]),
     cards: uniqueEvents([...(base.cards || []), ...(extra.cards || [])]),
     fouls: uniqueEvents([...(base.fouls || []), ...(extra.fouls || [])]).slice(0, 30),
@@ -651,7 +713,12 @@ async function fetchEspnScoreboardDetail(match) {
     const sameClock = String(match.officialClock || match.clock || '') === String(status.displayClock);
     match.clock = status.displayClock;
     match.officialClock = status.displayClock;
-    if (!sameClock || !match.clockSyncedAt) match.clockSyncedAt = Date.now();
+    if (sameClock && match.clockSyncedAt) {
+      // mantém sincronização persistente
+    } else {
+      match.clockSyncedAt = undefined;
+      hydratePersistentClockSync(match);
+    }
   }
   if (status.period) match.period = Number(status.period);
   return {
@@ -1035,7 +1102,7 @@ function matchCard(match) {
     return `<article class="match-card live ${match.justChanged ? 'score-flash' : ''}" data-match-id="${matchIdentifier(match)}">
       <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${liveHomeScore} × ${liveAwayScore}</b><strong>${match.away}</strong></div>
-      <p class="prediction">${isLive(match) ? `<b>Tempo:</b> ${formatGameClock(match)} • ${status}` : `<b>Status:</b> ${status}`}</p>
+      <p class="prediction">${isLive(match) ? `<b>Tempo:</b> ${formatGameClock(match)}` : `<b>Status:</b> ${status}`}</p>
       <small>${isLive(match) ? 'Placar atualizado automaticamente pela internet.' : 'Aguardando início da partida.'}</small>
       <div class="card-actions"><button type="button" class="details-btn" data-details-id="${matchIdentifier(match)}">Detalhes</button><button type="button" class="share-btn" data-share-id="${matchIdentifier(match)}">Compartilhar</button></div>
     </article>`;
@@ -1179,7 +1246,7 @@ function normalizeEspnEvent(event) {
     away: normalizeTeamName(away.team?.displayName || away.team?.shortDisplayName),
     homeScore: home.score !== undefined && home.score !== '' ? Number(home.score) : undefined,
     awayScore: away.score !== undefined && away.score !== '' ? Number(away.score) : undefined,
-    status: completed ? 'Finalizado' : translateStatus(statusDetail),
+    status: completed ? 'Finalizado' : (statusType.state === 'in' ? 'Ao vivo' : (looksLikeClockOnly(statusDetail) ? 'Ao vivo' : translateStatus(statusDetail))),
     statusState: statusType.state || '',
     statusCode: statusType.name || statusType.shortDetail || '',
     statusName,
@@ -1187,7 +1254,7 @@ function normalizeEspnEvent(event) {
     venue: competition.venue?.fullName || competition.venue?.displayName || '',
     clock: competition.status?.displayClock || event.status?.displayClock || '',
     officialClock: competition.status?.displayClock || event.status?.displayClock || '',
-    clockSyncedAt: Date.now(),
+    clockSyncedAt: undefined,
     period: Number(competition.status?.period || event.status?.period || 0),
     source: 'ESPN'
   };
@@ -1238,6 +1305,8 @@ function mergeMatches(base, apiMatches) {
       const existing = map.get(key);
       if (apiMatch.officialClock && existing.officialClock === apiMatch.officialClock && existing.clockSyncedAt) {
         apiMatch.clockSyncedAt = existing.clockSyncedAt;
+      } else if (apiMatch.officialClock || apiMatch.clock || apiMatch.gameClock) {
+        apiMatch.clockSyncedAt = undefined;
       }
       if (existing.details && !apiMatch.details) apiMatch.details = existing.details;
       Object.assign(existing, apiMatch);

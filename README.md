@@ -1,15 +1,11 @@
-# App Copa 2026 — correção de AO VIVO e detalhes
+# App Copa - correção do relógio ao vivo
 
-Correções desta versão:
+Correções nesta versão:
 
-- O card só fica verde e com “AO VIVO” quando:
-  - a fonte/API informa status real de jogo ao vivo; ou
-  - faltam até 30 minutos para o início, no mesmo dia da partida.
-- Jogos futuros de outras datas não entram mais como AO VIVO.
-- O relógio não reinicia artificialmente em jogos que ainda não começaram.
-- A lógica bloqueia falso status ao vivo vindo de fontes inconsistentes quando o horário oficial ainda está distante.
-- A tela de detalhes continua tentando enriquecer informações por ESPN Summary, ESPN Play-by-play, TheSportsDB, Sofascore/proxy e backend configurável.
-- Corrigida a extração de estatísticas da ESPN.
-- Atualizado o Service Worker para evitar cache antigo no navegador.
+- Remove o texto duplicado depois do tempo, como `• 14'`.
+- Exibe somente `Tempo: mm:ss` nos cards ao vivo.
+- Quando a API fornece apenas o minuto cheio (`14'`), o app usa o segundo do relógio do dispositivo para evitar que o contador volte para `14:00` ao atualizar a página.
+- Quando a API fornece `mm:ss`, o app usa esse tempo oficial como base.
+- Mantém a sincronização em `localStorage` por partida para preservar o relógio entre recarregamentos.
 
-Importante: para detalhes 100% completos e garantidos em tempo real, configure um backend/proxy profissional em `detailsProxyEndpoint`, pois muitas fontes públicas bloqueiam CORS no navegador.
+Observação: se a fonte oficial não entregar segundos reais, nenhum front-end consegue saber o segundo exato da transmissão; neste caso o app mantém uma contagem contínua aproximada até a próxima sincronização da API.
