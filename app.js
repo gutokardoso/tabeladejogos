@@ -318,19 +318,54 @@ function looksLikeClockOnly(value = '') {
   return /^(\d{1,3})(\+\d{1,2})?['’]?$/.test(raw) || /^\d{1,3}:\d{2}$/.test(raw);
 }
 
+function statusRawText(match = {}) {
+  return `${match.status || ''} ${match.statusDetail || ''} ${match.statusName || ''} ${match.statusCode || ''} ${match.statusState || ''}`.toLowerCase();
+}
+
 function isExtraTime(match) {
-  const status = String(match.status || '').toLowerCase();
-  return Number(match.period || 0) >= 3 || /extra|prorroga|et|1st extra|2nd extra|tempo extra/.test(status);
+  const status = statusRawText(match);
+  return Number(match.period || 0) >= 3 || /extra|prorroga|overtime|et\b|1st extra|2nd extra|tempo extra/.test(status);
 }
 
 function isPenaltyShootout(match) {
-  return /penalt|pênalt|shootout/.test(String(match.status || '').toLowerCase());
+  return /penalt|pênalt|shootout/.test(statusRawText(match));
+}
+
+function isOfficialClockPaused(match) {
+  const status = statusRawText(match);
+  return isFinished(match) || /intervalo|halftime|half time|paused|pause|status_halftime|status_pause/.test(status) || isPenaltyShootout(match);
+}
+
+function officialPeriodBase(match) {
+  const status = statusRawText(match);
+  const period = Number(match.period || 0);
+  if (period >= 4 || /2.*extra|segundo.*prorroga/.test(status)) return 105;
+  if (period === 3 || /extra|prorroga|overtime|1.*extra|primeiro.*prorroga/.test(status)) return 90;
+  if (period === 2 || /2º|segundo|second/.test(status)) return 45;
+  return 0;
+}
+
+function officialPeriodCap(match) {
+  const status = statusRawText(match);
+  const period = Number(match.period || 0);
+  if (isPenaltyShootout(match)) return 120;
+  if (period >= 4 || /2.*extra|segundo.*prorroga/.test(status)) return 120;
+  if (period === 3 || /extra|prorroga|overtime|1.*extra|primeiro.*prorroga/.test(status)) return 105;
+  if (period === 2 || /2º|segundo|second/.test(status)) return 90;
+  return 45;
 }
 
 function clockMaxFor(match) {
-  if (isPenaltyShootout(match)) return 130;
-  if (isExtraTime(match)) return 130;
-  return 90;
+  return officialPeriodCap(match);
+}
+
+function parseOfficialAddedMinutes(match) {
+  const raw = `${match.officialClock || ''} ${match.clock || ''} ${match.gameClock || ''} ${match.statusDetail || ''} ${match.statusName || ''} ${match.status || ''}`;
+  const plus = raw.match(/(45|90|105|120)\s*\+\s*(\d{1,2})/);
+  if (plus) return { base: Number(plus[1]), added: Number(plus[2]) };
+  const named = raw.match(/(?:added|stoppage|acréscimos?|acrescimos?)\D{0,12}(\d{1,2})/i);
+  if (named) return { base: officialPeriodCap(match), added: Number(named[1]) };
+  return null;
 }
 
 function liveClockStorageKey(match) {
@@ -339,7 +374,7 @@ function liveClockStorageKey(match) {
 
 function normalizeClockPayload(match) {
   const clock = String(match.officialClock || match.clock || match.gameClock || '').trim();
-  return `${clock}|${match.period || ''}|${match.status || ''}|${match.statusState || ''}`;
+  return `${clock}|${match.period || ''}|${match.status || ''}|${match.statusState || ''}|${match.statusDetail || ''}|${match.statusName || ''}`;
 }
 
 function hydratePersistentClockSync(match) {
@@ -359,9 +394,6 @@ function hydratePersistentClockSync(match) {
       return;
     }
 
-    // Se a API só informa minuto cheio (ex.: 14'), não temos os segundos reais.
-    // Para não zerar ao dar refresh, alinhamos o segundo ao relógio do dispositivo.
-    // Quando a API trouxer mm:ss, usamos o instante exato da sincronização.
     const syncedAt = clockHasSeconds(rawClock)
       ? Number(match.clockSyncedAt || now)
       : now - (new Date().getSeconds() * 1000);
@@ -373,20 +405,58 @@ function hydratePersistentClockSync(match) {
   }
 }
 
+function formatAddedClock(baseMinutes, addedMinutes, seconds = 0) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const mm = `${baseMinutes}+${addedMinutes}`;
+  if (!safeSeconds) return mm;
+  return `${mm}:${String(safeSeconds).padStart(2, '0')}`;
+}
+
+function normalizeOfficialClockText(clock) {
+  const raw = String(clock || '').trim();
+  if (!raw) return '';
+  const plus = raw.match(/^(\d{1,3})\s*\+\s*(\d{1,2})(?::(\d{2}))?/);
+  if (plus) return plus[3] ? `${plus[1]}+${plus[2]}:${plus[3]}` : `${plus[1]}+${plus[2]}`;
+  const mmss = raw.match(/^(\d{1,3}):(\d{2})/);
+  if (mmss) return `${String(Number(mmss[1])).padStart(2, '0')}:${mmss[2]}`;
+  const minute = raw.match(/^(\d{1,3})['’]?$/);
+  if (minute) return `${String(Number(minute[1])).padStart(2, '0')}:00`;
+  return raw.replace(/[’']/g, '');
+}
+
 function formatGameClock(match) {
+  if (isPenaltyShootout(match)) return 'Pênaltis';
+
   hydratePersistentClockSync(match);
   const officialClock = match.officialClock || match.clock || match.gameClock;
   const apiSeconds = parseClockToSeconds(officialClock);
+  const added = parseOfficialAddedMinutes(match);
+
   if (apiSeconds !== null) {
+    const periodCapSeconds = officialPeriodCap(match) * 60;
+    const addedCapSeconds = added ? ((added.base + added.added) * 60) : periodCapSeconds;
+    const maxSeconds = Math.max(periodCapSeconds, addedCapSeconds);
+
+    if (isOfficialClockPaused(match)) {
+      if (added) return formatAddedClock(added.base, added.added);
+      return normalizeOfficialClockText(officialClock) || formatClockParts(Math.min(apiSeconds, maxSeconds), officialPeriodCap(match));
+    }
+
     const syncedAt = Number(match.clockSyncedAt || match.details?.clockSyncedAt || Date.now());
-    const shouldTick = isLive(match) && !isFinished(match) && !/intervalo|halftime|half time|penalt|pênalt/i.test(String(match.status || '') + ' ' + String(match.statusDetail || ''));
-    const extraSeconds = shouldTick ? Math.max(0, Math.floor((Date.now() - syncedAt) / 1000)) : 0;
-    return formatClockParts(apiSeconds + extraSeconds, clockMaxFor(match));
+    const extraSeconds = isLive(match) ? Math.max(0, Math.floor((Date.now() - syncedAt) / 1000)) : 0;
+    const current = Math.min(apiSeconds + extraSeconds, maxSeconds);
+
+    if (added && current >= added.base * 60) {
+      return formatAddedClock(added.base, added.added, current - ((added.base + added.added) * 60) >= 0 ? 0 : current % 60);
+    }
+    return formatClockParts(current, officialPeriodCap(match));
   }
 
-  const status = String(match.status || '').toLowerCase();
-  if (/intervalo|halftime|half time/.test(status)) return '45:00';
-  if (isPenaltyShootout(match)) return 'Pênaltis';
+  const status = statusRawText(match);
+  if (/intervalo|halftime|half time|paused|pause/.test(status)) {
+    const addedPause = parseOfficialAddedMinutes(match);
+    return addedPause ? formatAddedClock(addedPause.base, addedPause.added) : '45:00';
+  }
   if (!isLive(match)) return '00:00';
 
   const kickoff = new Date(match.date);
@@ -395,15 +465,13 @@ function formatGameClock(match) {
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - kickoff.getTime()) / 1000));
   const period = Number(match.period || 0);
 
-  // Se a fonte não enviar o minuto oficial, estimamos por período e nunca tratamos
-  // tempo corrido bruto como tempo válido. Na prorrogação o limite passa a 120+.
   if (period === 1 || /1º|primeiro|first/.test(status)) return formatClockParts(elapsedSeconds, 45);
   if (period === 2 || /2º|segundo|second/.test(status)) return formatClockParts(Math.max(45 * 60, elapsedSeconds - (15 * 60)), 90);
   if (period === 3 || /1.*extra|primeiro.*prorroga/.test(status)) return formatClockParts(Math.max(90 * 60, elapsedSeconds - (15 * 60)), 105);
-  if (period >= 4 || /2.*extra|segundo.*prorroga|extra|prorroga/.test(status)) return formatClockParts(Math.max(105 * 60, elapsedSeconds - (20 * 60)), 130);
+  if (period >= 4 || /2.*extra|segundo.*prorroga|extra|prorroga/.test(status)) return formatClockParts(Math.max(105 * 60, elapsedSeconds - (20 * 60)), 120);
 
   const estimatedValidSeconds = elapsedSeconds > 60 * 60 ? elapsedSeconds - (15 * 60) : elapsedSeconds;
-  return formatClockParts(estimatedValidSeconds, isExtraTime(match) ? 130 : 90);
+  return formatClockParts(estimatedValidSeconds, isExtraTime(match) ? 120 : 45);
 }
 
 
