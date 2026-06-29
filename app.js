@@ -46,7 +46,8 @@ function minutesUntilKickoff(match) {
 function shouldShowLiveHighlight(match) {
   if (isFinished(match)) return false;
   const minutes = minutesUntilKickoff(match);
-  return isLive(match) || (minutes <= 30 && minutes >= 0);
+  // Entra no modo AO VIVO 30 minutos antes do início e só sai quando o jogo for finalizado pela API.
+  return isLive(match) || minutes <= 30;
 }
 
 function teamBase(team) {
