@@ -1,4 +1,4 @@
-const CACHE_NAME = 'copa-2026-v2';
+const CACHE_NAME = 'copa-2026-v9-real-live';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)).catch(() => null));

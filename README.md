@@ -1,16 +1,15 @@
-# App Copa — tempo oficial e detalhes profissionais
+# App Copa 2026 — correção de AO VIVO e detalhes
 
-Atualização aplicada:
-- O cronômetro agora aceita minutos oficiais acima de 90, incluindo prorrogação (91–120+) e pênaltis.
-- O app prioriza o relógio oficial da API/fonte conectada antes de estimar localmente.
-- A página de detalhes tenta enriquecer jogo por jogo com: estádio, árbitro, público, gols, cartões, faltas, substituições e estatísticas.
-- Foram adicionadas camadas de busca: backend/proxy configurável, ESPN Summary, ESPN Play-by-Play, ESPN Scoreboard, TheSportsDB e tentativa pública via proxy.
-- Para uso profissional com dados 100% completos, configure `detailsProxyEndpoint` em `data.js` com uma API/proxy próprio que consulte fontes como Google/ESPN/Sofascore/Flashscore/fornecedor oficial, evitando bloqueios de CORS.
+Correções desta versão:
 
-Arquivos principais:
-- `index.html`
-- `style.css`
-- `app.js`
-- `data.js`
-- `manifest.webmanifest`
-- `sw.js`
+- O card só fica verde e com “AO VIVO” quando:
+  - a fonte/API informa status real de jogo ao vivo; ou
+  - faltam até 30 minutos para o início, no mesmo dia da partida.
+- Jogos futuros de outras datas não entram mais como AO VIVO.
+- O relógio não reinicia artificialmente em jogos que ainda não começaram.
+- A lógica bloqueia falso status ao vivo vindo de fontes inconsistentes quando o horário oficial ainda está distante.
+- A tela de detalhes continua tentando enriquecer informações por ESPN Summary, ESPN Play-by-play, TheSportsDB, Sofascore/proxy e backend configurável.
+- Corrigida a extração de estatísticas da ESPN.
+- Atualizado o Service Worker para evitar cache antigo no navegador.
+
+Importante: para detalhes 100% completos e garantidos em tempo real, configure um backend/proxy profissional em `detailsProxyEndpoint`, pois muitas fontes públicas bloqueiam CORS no navegador.

@@ -28,8 +28,28 @@ function isFinished(match) {
   return Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) && /final|encerrado/i.test(match.status || 'finalizado');
 }
 
+function isExplicitLiveStatus(match) {
+  const status = String(match.status || '').toLowerCase();
+  if (!status || /agendado|scheduled|pre|not started|final|encerrado|finished|complete|completed|fulltime|cancel|postponed|adiado/i.test(status)) return false;
+  return /live|ao vivo|in progress|andamento|1º|1st|first half|2º|2nd|second half|intervalo|halftime|half time|extra|prorroga|penalt|pênalt/i.test(status);
+}
+
 function isLive(match) {
-  return /live|ao vivo|in progress|intervalo|1º|2º|andamento|half|extra|penalt/i.test(match.status || '');
+  if (isFinished(match) || !isExplicitLiveStatus(match)) return false;
+  const minutes = minutesUntilKickoff(match);
+  const hasOfficialClock = parseClockToSeconds(match.officialClock || match.clock || match.gameClock) !== null;
+  const hasStartedPeriod = Number(match.period || 0) > 0;
+  const isShootoutOrExtra = /extra|prorroga|penalt|pênalt/i.test(String(match.status || ''));
+
+  // Proteção contra falso AO VIVO: se a partida é de outra data ou está muito longe
+  // do horário oficial, não tratamos como ao vivo mesmo que uma fonte genérica
+  // retorne status errado. Isso corrige jogos futuros marcados como 0 x 0 AO VIVO.
+  if (Number.isFinite(minutes)) {
+    if (minutes > 30) return false;
+    if (minutes < -360 && !isShootoutOrExtra) return false;
+  }
+
+  return hasOfficialClock || hasStartedPeriod || isShootoutOrExtra || (Number.isFinite(minutes) && minutes <= 30 && minutes >= -360);
 }
 
 function hasDefinedTeams(match) {
@@ -58,7 +78,10 @@ function minutesUntilKickoff(match) {
 function isPregameWindow(match) {
   if (isFinished(match) || isLive(match)) return false;
   const minutes = minutesUntilKickoff(match);
-  return Number.isFinite(minutes) && minutes >= 0 && minutes <= 30;
+  if (!Number.isFinite(minutes) || minutes < 0 || minutes > 30) return false;
+  const kickoff = new Date(match.date);
+  const now = new Date();
+  return kickoff.toDateString() === now.toDateString();
 }
 
 function shouldShowLiveHighlight(match) {
@@ -347,10 +370,10 @@ function buildScoreBasedDetails(match) {
   const homeTimes = ['18’', '39’', '66’', '82’', '90+3’'];
   const awayTimes = ['29’', '52’', '71’', '88’', '90+5’'];
   for (let i = 0; i < homeGoals; i += 1) {
-    details.goals.push({ time: homeTimes[i] || 'tempo oficial', player: 'Autor em atualização pelas fontes', team: match.home });
+    details.goals.push({ time: homeTimes[i] || 'tempo oficial', player: 'Autor aguardando fonte oficial', team: match.home });
   }
   for (let i = 0; i < awayGoals; i += 1) {
-    details.goals.push({ time: awayTimes[i] || 'tempo oficial', player: 'Autor em atualização pelas fontes', team: match.away });
+    details.goals.push({ time: awayTimes[i] || 'tempo oficial', player: 'Autor aguardando fonte oficial', team: match.away });
   }
   details.stats.goals = `${match.home} ${homeGoals} x ${awayGoals} ${match.away}`;
   return details;
@@ -395,8 +418,8 @@ function buildScoreBasedGoalPlaceholders(match) {
   const items = [];
   const homeGoals = Math.max(0, Number(match.homeScore || 0));
   const awayGoals = Math.max(0, Number(match.awayScore || 0));
-  for (let i = 0; i < homeGoals; i += 1) items.push({ time: 'ao vivo', player: 'autor sendo sincronizado', team: match.home });
-  for (let i = 0; i < awayGoals; i += 1) items.push({ time: 'ao vivo', player: 'autor sendo sincronizado', team: match.away });
+  for (let i = 0; i < homeGoals; i += 1) items.push({ time: 'ao vivo', player: 'autor aguardando fonte oficial', team: match.home });
+  for (let i = 0; i < awayGoals; i += 1) items.push({ time: 'ao vivo', player: 'autor aguardando fonte oficial', team: match.away });
   return items;
 }
 
@@ -404,7 +427,7 @@ function renderFactList(items, emptyText, type) {
   if (!items || !items.length) return `<li class="pending-detail live-syncing">${emptyText}</li>`;
   return items.map(item => {
     const time = item.time || item.minute || item.clock || '';
-    const player = item.player || item.athlete || item.scorer || 'Jogador não informado';
+    const player = item.player || item.athlete || item.scorer || 'autor aguardando fonte oficial';
     const team = item.team ? ` • ${item.team}` : '';
     if (type === 'goal') return `<li><b>${escapeHtml(time)}</b> Gol de ${escapeHtml(player)}${escapeHtml(team)}${item.assist ? ` <small>Assistência: ${escapeHtml(item.assist)}</small>` : ''}</li>`;
     if (type === 'card') return `<li><b>${escapeHtml(time)}</b> ${escapeHtml(item.card || item.type || 'Cartão')} para ${escapeHtml(player)}${escapeHtml(team)}</li>`;
@@ -814,7 +837,8 @@ function parseEspnStats(data, match) {
   const result = {};
   const statLines = JSON.stringify(rows);
   const extract = (label) => {
-    const re = new RegExp(`"name"\s*:\s*"${label}"[\s\S]{0,120}?"displayValue"\s*:\s*"([^"]+)"`, 'i');
+    const escapedLabel = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(String.raw`"name"\s*:\s*"${escapedLabel}"[\s\S]{0,180}?"displayValue"\s*:\s*"([^"]+)"`, 'i');
     const m = statLines.match(re);
     return m ? m[1] : '';
   };
