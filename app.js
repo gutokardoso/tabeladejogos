@@ -717,7 +717,7 @@ async function fetchMatchDetailsFromAllSources(match) {
   const payloads = [];
 
   const attempts = [
-    ['Agregador gratuito /api/details', () => fetchConfiguredDetailsProxy(match)],
+    ['Backend/Google Proxy', () => fetchConfiguredDetailsProxy(match)],
     ['ESPN Summary', () => fetchEspnSummaryDetails(match)],
     ['ESPN Página pública', () => fetchEspnHtmlDetails(match)],
     ['ESPN Plays', () => fetchEspnPlayByPlayDetails(match)],
@@ -777,7 +777,7 @@ function uniqueEvents(items = []) {
 
 async function fetchConfiguredDetailsProxy(match) {
   if (!API_CONFIG.detailsProxyEndpoint) return null;
-  const url = new URL(API_CONFIG.detailsProxyEndpoint, window.location.origin);
+  const url = new URL(API_CONFIG.detailsProxyEndpoint);
   url.searchParams.set('home', match.home);
   url.searchParams.set('away', match.away);
   url.searchParams.set('date', String(match.date).slice(0, 10));
@@ -1329,6 +1329,7 @@ async function loadInternetScores() {
     liveData.matches.forEach(match => { match.details = forceDetailsWhenMissing(match, match.details || {}); });
     setSyncStatus(`Usando dados locais. Motivo: ${error.message}`, 'warning');
   }
+  liveData.matches = dedupeMatches(liveData.matches);
   liveData.matches.forEach(match => { match.details = forceDetailsWhenMissing(match, match.details || {}); });
   detectScoreChanges();
   renderAll();
@@ -1413,7 +1414,9 @@ function buildDateRangeParam() {
 
 function mergeMatches(base, apiMatches) {
   const merged = structuredClone(base);
+  merged.matches = dedupeMatches(merged.matches);
   const map = new Map(merged.matches.map(m => [matchKey(m), m]));
+
   apiMatches.forEach(apiMatch => {
     const key = matchKey(apiMatch);
     if (map.has(key)) {
@@ -1427,15 +1430,114 @@ function mergeMatches(base, apiMatches) {
       Object.assign(existing, apiMatch);
       existing.details = forceDetailsWhenMissing(existing, existing.details || {});
     } else {
-      apiMatch.details = forceDetailsWhenMissing(apiMatch, apiMatch.details || {});
-      merged.matches.push(apiMatch);
+      const duplicateIndex = merged.matches.findIndex(existing => sameOfficialFixture(existing, apiMatch));
+      if (duplicateIndex >= 0) {
+        const existing = merged.matches[duplicateIndex];
+        const chosen = chooseBestFixture(existing, apiMatch);
+        if (existing.details && !chosen.details) chosen.details = existing.details;
+        chosen.details = forceDetailsWhenMissing(chosen, chosen.details || {});
+        merged.matches[duplicateIndex] = chosen;
+      } else {
+        apiMatch.details = forceDetailsWhenMissing(apiMatch, apiMatch.details || {});
+        merged.matches.push(apiMatch);
+      }
     }
   });
+
+  merged.matches = dedupeMatches(merged.matches);
   return merged;
 }
 
 function matchKey(match) {
   return `${String(match.date).slice(0, 10)}|${match.home}|${match.away}`.toLowerCase();
+}
+
+function normalizeFixtureName(value = '') {
+  return String(normalizeTeamName(value) || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function fixtureTeamsKey(match = {}) {
+  return [normalizeFixtureName(match.home), normalizeFixtureName(match.away)].sort().join('|');
+}
+
+function stageGroup(stage = '') {
+  const translated = translateStage(stage).toLowerCase();
+  if (/16 avos|round of 32|round 32/.test(translated)) return 'r32';
+  if (/oitavas|round of 16|round 16/.test(translated)) return 'r16';
+  if (/quartas/.test(translated)) return 'qf';
+  if (/semi/.test(translated)) return 'sf';
+  if (/final/.test(translated) && !/3|terceiro|disputa/.test(translated)) return 'final';
+  if (/grupo|fase de grupos/.test(translated)) return translated;
+  return translated || 'stage';
+}
+
+function sameOfficialFixture(a = {}, b = {}) {
+  if (!a.home || !a.away || !b.home || !b.away) return false;
+  if (fixtureTeamsKey(a) !== fixtureTeamsKey(b)) return false;
+  const stageA = stageGroup(a.stage);
+  const stageB = stageGroup(b.stage);
+  if (stageA && stageB && stageA !== stageB) return false;
+
+  const dateA = new Date(a.date);
+  const dateB = new Date(b.date);
+  if (Number.isNaN(dateA.getTime()) || Number.isNaN(dateB.getTime())) return true;
+
+  // A mesma partida pode vir de fontes diferentes com fuso/agenda corrigida.
+  // Se os times e a fase são iguais, tratamos como duplicata até 10 dias de diferença.
+  return Math.abs(dateA.getTime() - dateB.getTime()) <= 10 * 24 * 60 * 60 * 1000;
+}
+
+function fixtureQuality(match = {}) {
+  let score = 0;
+  const source = String(match.source || '').toLowerCase();
+  if (source && !/fallback|local/.test(source)) score += 100;
+  if (match.id) score += 30;
+  if (Number.isInteger(match.homeScore) || Number.isInteger(match.awayScore)) score += 25;
+  if (match.officialClock || match.clock || match.statusState || match.statusDetail) score += 20;
+  if (match.venue) score += 10;
+  if (match.details && Object.keys(match.details).length) score += 8;
+  const date = new Date(match.date);
+  if (!Number.isNaN(date.getTime())) score += 5;
+  return score;
+}
+
+function chooseBestFixture(a, b) {
+  const qa = fixtureQuality(a);
+  const qb = fixtureQuality(b);
+  const primary = qb >= qa ? b : a;
+  const secondary = qb >= qa ? a : b;
+  return {
+    ...secondary,
+    ...primary,
+    details: primary.details || secondary.details,
+    stage: translateStage(primary.stage || secondary.stage),
+    home: normalizeTeamName(primary.home || secondary.home),
+    away: normalizeTeamName(primary.away || secondary.away)
+  };
+}
+
+function dedupeMatches(matches = []) {
+  const result = [];
+  matches.forEach(match => {
+    const normalized = {
+      ...match,
+      stage: translateStage(match.stage),
+      home: normalizeTeamName(match.home),
+      away: normalizeTeamName(match.away)
+    };
+    const duplicateIndex = result.findIndex(existing => sameOfficialFixture(existing, normalized));
+    if (duplicateIndex >= 0) {
+      result[duplicateIndex] = chooseBestFixture(result[duplicateIndex], normalized);
+    } else {
+      result.push(normalized);
+    }
+  });
+  return result;
 }
 
 teamSearchEl?.addEventListener('input', event => {

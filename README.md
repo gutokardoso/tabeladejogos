@@ -28,3 +28,8 @@ Observação: se a fonte oficial não entregar segundos reais, nenhum front-end 
   - 42’ Gol de Julio Enciso • Paraguai
   - 54’ Gol de Kai Havertz • Alemanha, assistência de Florian Wirtz
 - Para produção, configure `API_CONFIG.detailsProxyEndpoint` com um backend próprio ligado a uma API esportiva licenciada para garantir eventos completos em tempo real sem bloqueio de CORS.
+
+## Ajuste desta versão
+- Correção de duplicidade de jogos ao mesclar tabela local/API/agregador.
+- A deduplicação compara times normalizados, fase e janela de datas, priorizando o registro oficial/API quando houver conflito.
+- Impede duplicatas como Argentina x Cabo Verde em datas diferentes quando representam a mesma partida.
