@@ -217,6 +217,61 @@ function matchIdentifier(match) {
   return match.id || matchKey(match);
 }
 
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('\"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function formatGameClock(match) {
+  if (match.clock) {
+    const raw = String(match.clock).trim();
+    if (/^\d{1,3}:\d{2}$/.test(raw)) return raw;
+    const num = Number(raw);
+    if (Number.isFinite(num)) {
+      const minutes = Math.floor(num);
+      const seconds = Math.floor((num - minutes) * 60);
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+  }
+  const kickoff = new Date(match.date);
+  if (Number.isNaN(kickoff.getTime())) return '00:00';
+  const elapsedMs = Math.max(0, Date.now() - kickoff.getTime());
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.min(130, Math.floor(totalSeconds / 60));
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function normalizeMatchFacts(match) {
+  const details = match.details || {};
+  const goals = details.goals || match.goals || [];
+  const cards = details.cards || match.cards || [];
+  const fouls = details.fouls || match.fouls || [];
+  return {
+    venue: details.venue || match.venue || 'Informação não disponível na API.',
+    goals,
+    cards,
+    fouls
+  };
+}
+
+function renderFactList(items, emptyText, type) {
+  if (!items || !items.length) return `<li>${emptyText}</li>`;
+  return items.map(item => {
+    const time = item.time || item.minute || item.clock || '';
+    const player = item.player || item.athlete || item.scorer || 'Jogador não informado';
+    const team = item.team ? ` • ${item.team}` : '';
+    if (type === 'goal') return `<li><b>${escapeHtml(time)}</b> Gol de ${escapeHtml(player)}${escapeHtml(team)}</li>`;
+    if (type === 'card') return `<li><b>${escapeHtml(time)}</b> ${escapeHtml(item.card || item.type || 'Cartão')} para ${escapeHtml(player)}${escapeHtml(team)}</li>`;
+    if (type === 'foul') return `<li><b>${escapeHtml(time)}</b> ${escapeHtml(player)} fez falta em ${escapeHtml(item.drawnBy || item.victim || 'jogador não informado')}${escapeHtml(team)}</li>`;
+    return `<li>${escapeHtml(JSON.stringify(item))}</li>`;
+  }).join('');
+}
+
 function getTeamStatsLine(team) {
   const f = teamForm(team);
   if (!f.played) return 'Sem jogos finalizados nesta base.';
@@ -231,28 +286,69 @@ function savePredictionResult(match) {
   return { match, p, realWinner, hit };
 }
 
-function openMatchDetails(id) {
+async function openMatchDetails(id) {
   const match = liveData.matches.find(m => String(matchIdentifier(m)) === String(id));
   if (!match || !matchDetailsEl || !matchModalEl) return;
   const p = predict(match);
-  const liveScore = `${Number.isInteger(match.homeScore) ? match.homeScore : 0} × ${Number.isInteger(match.awayScore) ? match.awayScore : 0}`;
-  const score = isFinished(match) || shouldShowLiveHighlight(match) ? liveScore : `${p.homeGoals} × ${p.awayGoals}`;
+  const fixedLiveScore = `${Number.isInteger(match.homeScore) ? match.homeScore : 0} × ${Number.isInteger(match.awayScore) ? match.awayScore : 0}`;
+  const score = isFinished(match) || shouldShowLiveHighlight(match) ? fixedLiveScore : `${p.homeGoals} × ${p.awayGoals}`;
+  const facts = normalizeMatchFacts(match);
   matchDetailsEl.innerHTML = `
     <span class="modal-kicker">${translateStage(match.stage)} • ${formatDateTime(match.date)}</span>
     <h2>${match.home} x ${match.away}</h2>
     <div class="modal-score">${score}</div>
-    <p><b>Status:</b> ${matchStatusText(match)}</p>
+    <p><b>Status:</b> ${matchStatusText(match)}${shouldShowLiveHighlight(match) ? ` • Tempo de jogo: ${formatGameClock(match)}` : ''}</p>
+    <p><b>Estádio:</b> ${escapeHtml(facts.venue)}</p>
     <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
     <div class="detail-grid">
       <div><strong>${match.home}</strong><span>${getTeamStatsLine(match.home)}</span><small>Chance: ${p.homeChance}%</small></div>
       <div><strong>Empate</strong><span>Equilíbrio no tempo normal</span><small>Chance: ${p.drawChance}%</small></div>
       <div><strong>${match.away}</strong><span>${getTeamStatsLine(match.away)}</span><small>Chance: ${p.awayChance}%</small></div>
     </div>
-    <p><b>Escalação provável:</b> disponível quando a API fornecer dados oficiais de pré-jogo.</p>
+    <div class="match-events-grid">
+      <section><h3>Gols</h3><ul>${renderFactList(facts.goals, 'Nenhum gol informado pela API até agora.', 'goal')}</ul></section>
+      <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, 'Nenhum cartão informado pela API até agora.', 'card')}</ul></section>
+      <section><h3>Faltas</h3><ul>${renderFactList(facts.fouls, 'Nenhuma falta individual informada pela API até agora.', 'foul')}</ul></section>
+    </div>
+    <p class="details-note">As informações de estádio, gols, cartões e faltas são exibidas quando a API fornece esses dados específicos do jogo. Caso a API não envie algum detalhe, o campo fica sinalizado como não disponível.</p>
     <button class="share-btn" type="button" data-share-id="${matchIdentifier(match)}">Compartilhar previsão</button>
   `;
   matchModalEl.setAttribute('aria-hidden', 'false');
   matchModalEl.classList.add('open');
+  if (!match.detailsLoaded) hydrateEspnDetails(match).catch(() => {});
+}
+
+async function hydrateEspnDetails(match) {
+  if (!match.id || match.source !== 'ESPN') return;
+  const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${match.id}`, { cache: 'no-store' });
+  if (!response.ok) return;
+  const data = await response.json();
+  const competition = data.header?.competitions?.[0] || data.boxscore?.gamepackageJSON?.header?.competitions?.[0];
+  const venue = competition?.venue?.fullName || competition?.venue?.displayName || data.gameInfo?.venue?.fullName || data.gameInfo?.venue?.displayName;
+  const goals = (data.scoringPlays || []).map(play => ({
+    time: play.clock?.displayValue || play.time?.displayValue || play.period?.displayValue || '',
+    player: play.athletes?.[0]?.displayName || play.participants?.[0]?.athlete?.displayName || play.text || 'Jogador não informado',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
+  }));
+  const cards = (data.plays || []).filter(play => /yellow|red|cartão|card/i.test(play.type?.text || play.text || '')).map(play => ({
+    time: play.clock?.displayValue || '',
+    player: play.participants?.[0]?.athlete?.displayName || play.athletes?.[0]?.displayName || 'Jogador não informado',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || ''),
+    card: /red|vermelho/i.test(play.type?.text || play.text || '') ? 'Cartão vermelho' : 'Cartão amarelo'
+  }));
+  const fouls = (data.plays || []).filter(play => /foul|falta/i.test(play.type?.text || play.text || '')).slice(0, 12).map(play => ({
+    time: play.clock?.displayValue || '',
+    player: play.participants?.[0]?.athlete?.displayName || play.athletes?.[0]?.displayName || 'Jogador não informado',
+    drawnBy: play.participants?.[1]?.athlete?.displayName || '',
+    team: normalizeTeamName(play.team?.displayName || play.team?.name || '')
+  }));
+  match.details = { venue: venue || match.venue, goals, cards, fouls };
+  match.detailsLoaded = true;
+  if (matchModalEl?.classList.contains('open') && String(matchIdentifier(match)) === String(matchIdentifier(liveData.matches.find(m => String(matchIdentifier(m)) === String(matchIdentifier(match))) || match))) {
+    const currentId = matchIdentifier(match);
+    const modalTitle = matchDetailsEl?.querySelector('h2')?.textContent || '';
+    if (modalTitle.includes(match.home) && modalTitle.includes(match.away)) openMatchDetails(currentId);
+  }
 }
 
 function closeMatchDetails() {
@@ -332,7 +428,7 @@ function matchCard(match) {
     return `<article class="match-card live ${match.justChanged ? 'score-flash' : ''}" data-match-id="${matchIdentifier(match)}">
       <div class="match-top"><span>${stageLabel}</span><time>${formatDateTime(match.date)}</time></div>
       <div class="score-line"><strong>${match.home}</strong><b>${liveHomeScore} × ${liveAwayScore}</b><strong>${match.away}</strong></div>
-      <p class="prediction"><b>Ao vivo:</b> ${status}</p>
+      <p class="prediction"><b>Tempo:</b> ${formatGameClock(match)} • ${status}</p>
       <small>Placar atualizado automaticamente pela internet.</small>
       <div class="card-actions"><button type="button" class="details-btn" data-details-id="${matchIdentifier(match)}">Detalhes</button><button type="button" class="share-btn" data-share-id="${matchIdentifier(match)}">Compartilhar</button></div>
     </article>`;
@@ -387,7 +483,7 @@ function renderMatches() {
       const liveAwayScore = Number.isInteger(next.awayScore) ? next.awayScore : 0;
       heroCardEl?.classList.add('live');
       nextMatchPrediction?.classList.add('live-score');
-      if (nextMatchLabel) nextMatchLabel.textContent = 'AO VIVO';
+      if (nextMatchLabel) nextMatchLabel.innerHTML = `<small class="top-live-clock">${formatGameClock(next)}</small><span>AO VIVO</span>`;
       nextMatchPrediction.textContent = `${liveHomeScore} x ${liveAwayScore}`;
     } else {
       const p = predict(next);
@@ -465,12 +561,14 @@ function normalizeEspnEvent(event) {
   return {
     id: event.id,
     date: event.date,
-    stage: translateStage(event.season?.slug || event.shortName || 'Copa do Mundo'),
+    stage: translateStage(event.season?.slug || competition?.type?.abbreviation || competition?.notes?.[0]?.headline || event.shortName || 'Copa do Mundo'),
     home: normalizeTeamName(home.team?.displayName || home.team?.shortDisplayName),
     away: normalizeTeamName(away.team?.displayName || away.team?.shortDisplayName),
     homeScore: home.score !== undefined && home.score !== '' ? Number(home.score) : undefined,
     awayScore: away.score !== undefined && away.score !== '' ? Number(away.score) : undefined,
     status: completed ? 'Finalizado' : translateStatus(statusName),
+    venue: competition.venue?.fullName || competition.venue?.displayName || '',
+    clock: competition.status?.displayClock || event.status?.displayClock || '',
     source: 'ESPN'
   };
 }
@@ -492,6 +590,7 @@ async function fetchFootballDataMatches() {
     homeScore: Number.isInteger(m.score?.fullTime?.home) ? m.score.fullTime.home : undefined,
     awayScore: Number.isInteger(m.score?.fullTime?.away) ? m.score.fullTime.away : undefined,
     status: translateStatus(m.status),
+    venue: m.venue || '',
     source: 'football-data.org'
   })).filter(m => m.home && m.away);
 }
@@ -552,3 +651,6 @@ filterButtons.forEach(button => {
 renderAll();
 loadInternetScores();
 refreshTimer = setInterval(loadInternetScores, Math.max(30, API_CONFIG.refreshSeconds) * 1000);
+setInterval(() => {
+  if (liveData.matches.some(m => shouldShowLiveHighlight(m))) renderMatches();
+}, 1000);
