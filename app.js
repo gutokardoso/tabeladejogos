@@ -449,11 +449,6 @@ async function openMatchDetails(id) {
     <p><b>Status:</b> ${matchStatusText(match)}${shouldShowLiveHighlight(match) ? ` • Tempo de jogo: <span data-live-detail-clock>${formatGameClock(match)}</span>` : ''}</p>
     <p><b>Estádio:</b> ${escapeHtml(facts.venue)}${facts.referee ? ` • <b>Árbitro:</b> ${escapeHtml(facts.referee)}` : ''}${facts.attendance ? ` • <b>Público:</b> ${escapeHtml(facts.attendance)}` : ''}</p>
     <p><b>Previsão:</b> ${p.winner} • ${p.homeGoals} x ${p.awayGoals}</p>
-    <div class="detail-grid">
-      <div><strong>${match.home}</strong><span>${getTeamStatsLine(match.home)}</span><small>Chance: ${p.homeChance}%</small></div>
-      <div><strong>Empate</strong><span>Equilíbrio no tempo normal</span><small>Chance: ${p.drawChance}%</small></div>
-      <div><strong>${match.away}</strong><span>${getTeamStatsLine(match.away)}</span><small>Chance: ${p.awayChance}%</small></div>
-    </div>
     <div class="match-events-grid">
       <section><h3>Gols</h3><ul>${renderFactList(facts.goals, facts.loading ? 'Buscando gols em fontes alternativas...' : 'Sincronizando gols em tempo real com fontes esportivas...', 'goal')}</ul></section>
       <section><h3>Cartões</h3><ul>${renderFactList(facts.cards, facts.loading ? 'Buscando cartões em fontes alternativas...' : 'Sincronizando cartões em tempo real com fontes esportivas...', 'card')}</ul></section>
