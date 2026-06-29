@@ -12,7 +12,7 @@ const API_CONFIG = {
   // Camada profissional opcional: informe uma URL de backend/proxy para enriquecer detalhes
   // com fontes como Google/ESPN/Sofascore/Flashscore sem bloqueios de CORS.
   // Exemplo de resposta esperada: { venue, referee, attendance, goals:[], cards:[], fouls:[], substitutions:[], stats:{}, clock }
-  detailsProxyEndpoint: '',
+  detailsProxyEndpoint: '/api/details',
 
   // Busca pública sem chave como tentativa extra. Pode falhar por CORS em alguns navegadores.
   allOriginsProxy: 'https://api.allorigins.win/raw?url='

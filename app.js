@@ -717,7 +717,7 @@ async function fetchMatchDetailsFromAllSources(match) {
   const payloads = [];
 
   const attempts = [
-    ['Backend/Google Proxy', () => fetchConfiguredDetailsProxy(match)],
+    ['Agregador gratuito /api/details', () => fetchConfiguredDetailsProxy(match)],
     ['ESPN Summary', () => fetchEspnSummaryDetails(match)],
     ['ESPN Página pública', () => fetchEspnHtmlDetails(match)],
     ['ESPN Plays', () => fetchEspnPlayByPlayDetails(match)],
@@ -777,7 +777,7 @@ function uniqueEvents(items = []) {
 
 async function fetchConfiguredDetailsProxy(match) {
   if (!API_CONFIG.detailsProxyEndpoint) return null;
-  const url = new URL(API_CONFIG.detailsProxyEndpoint);
+  const url = new URL(API_CONFIG.detailsProxyEndpoint, window.location.origin);
   url.searchParams.set('home', match.home);
   url.searchParams.set('away', match.away);
   url.searchParams.set('date', String(match.date).slice(0, 10));
