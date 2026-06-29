@@ -4,6 +4,7 @@ const surprisesEl = document.querySelector('#surprises');
 const summaryEl = document.querySelector('#summaryStats');
 const nextMatchTitle = document.querySelector('#nextMatchTitle');
 const nextMatchPrediction = document.querySelector('#nextMatchPrediction');
+const nextMatchLabel = document.querySelector('#nextMatchLabel');
 const heroCardEl = document.querySelector('.hero-card');
 const filterButtons = [...document.querySelectorAll('.filter')];
 const syncStatusEl = document.querySelector('#syncStatus');
@@ -260,13 +261,17 @@ function renderMatches() {
 
   const next = ordered.find(m => !isFinished(m));
   heroCardEl?.classList.remove('live');
+  nextMatchPrediction?.classList.remove('live-score');
+  if (nextMatchLabel) nextMatchLabel.textContent = 'Próximo jogo';
   if (next) {
     nextMatchTitle.textContent = `${next.home} x ${next.away}`;
     if (shouldShowLiveHighlight(next)) {
       const liveHomeScore = Number.isInteger(next.homeScore) ? next.homeScore : 0;
       const liveAwayScore = Number.isInteger(next.awayScore) ? next.awayScore : 0;
       heroCardEl?.classList.add('live');
-      nextMatchPrediction.textContent = `AO VIVO • ${liveHomeScore} x ${liveAwayScore}`;
+      nextMatchPrediction?.classList.add('live-score');
+      if (nextMatchLabel) nextMatchLabel.textContent = 'AO VIVO';
+      nextMatchPrediction.textContent = `${liveHomeScore} x ${liveAwayScore}`;
     } else {
       const p = predict(next);
       nextMatchPrediction.textContent = `Palpite: ${p.homeGoals} x ${p.awayGoals} — ${p.winner}`;
@@ -274,6 +279,7 @@ function renderMatches() {
   } else {
     nextMatchTitle.textContent = 'Todos os jogos foram finalizados';
     nextMatchPrediction.textContent = 'Confira o ranking final.';
+    if (nextMatchLabel) nextMatchLabel.textContent = 'Tabela encerrada';
   }
 }
 
@@ -404,7 +410,6 @@ filterButtons.forEach(button => {
   });
 });
 
-refreshScoresBtn?.addEventListener('click', loadInternetScores);
 
 renderAll();
 loadInternetScores();

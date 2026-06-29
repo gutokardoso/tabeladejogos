@@ -163,3 +163,13 @@ h2 { margin: 0 0 16px; font-size: 22px; letter-spacing: -.03em; }
 .hero-card.live strong {
   color: #fff;
 }
+
+
+.hero-card.live .live-score {
+  color: #fff;
+  font-size: 30px;
+  line-height: 1.05;
+  font-weight: 900;
+  text-transform: none;
+  letter-spacing: -0.02em;
+}
