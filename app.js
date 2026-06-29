@@ -24,32 +24,55 @@ let lastScoreSnapshot = new Map();
 let activeDetailsMatchId = null;
 let detailsRefreshTimer = null;
 
+function getMatchState(match = {}) {
+  return String(
+    match.statusState || match.apiState || match.state || match.statusCode || match.statusType || match.statusName || match.rawStatus || ''
+  ).toLowerCase();
+}
+
 function isFinished(match) {
-  return Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) && /final|encerrado/i.test(match.status || 'finalizado');
+  const state = getMatchState(match);
+  const status = String(match.status || '').toLowerCase();
+  if (/post|final|finished|complete|completed|fulltime|status_final|ft|encerrado/.test(state)) return true;
+  return Number.isInteger(match.homeScore) && Number.isInteger(match.awayScore) && /final|encerrado|finished|complete|completed|fulltime/.test(status);
 }
 
 function isExplicitLiveStatus(match) {
+  if (isFinished(match)) return false;
+  const state = getMatchState(match);
   const status = String(match.status || '').toLowerCase();
-  if (!status || /agendado|scheduled|pre|not started|final|encerrado|finished|complete|completed|fulltime|cancel|postponed|adiado/i.test(status)) return false;
-  return /live|ao vivo|in progress|andamento|1º|1st|first half|2º|2nd|second half|intervalo|halftime|half time|extra|prorroga|penalt|pênalt/i.test(status);
+  const raw = `${state} ${status} ${String(match.statusDetail || '')} ${String(match.statusName || '')}`.toLowerCase();
+
+  // Estados oficiais das APIs: só estes podem transformar um jogo em AO VIVO.
+  if (/\b(in|live)\b|status_in_progress|in_progress|in-progress|status_halftime|halftime|half_time|status_first_half|status_second_half|status_overtime|status_penalty/.test(raw)) return true;
+
+  // Nunca considerar AO VIVO quando a fonte marca pré-jogo, agendado, adiado ou encerrado.
+  if (/\b(pre|post)\b|scheduled|agendado|pre-game|pregame|not started|not_started|status_scheduled|final|finished|complete|completed|fulltime|cancel|postponed|adiado/.test(raw)) return false;
+
+  return /ao vivo|andamento|1º|1st|first half|2º|2nd|second half|intervalo|extra|prorroga|penalt|pênalt/.test(raw);
 }
 
 function isLive(match) {
   if (isFinished(match) || !isExplicitLiveStatus(match)) return false;
+  const state = getMatchState(match);
   const minutes = minutesUntilKickoff(match);
+
+  // Quando a API informa explicitamente estado "in/live", a fonte oficial manda.
+  // Ainda assim, bloqueamos datas absurdamente distantes para evitar cache/API errada.
+  if (/\b(in|live)\b|status_in_progress|in_progress|status_halftime|status_overtime|status_penalty/.test(state)) {
+    return !Number.isFinite(minutes) || (minutes < 360 && minutes > -360);
+  }
+
   const hasOfficialClock = parseClockToSeconds(match.officialClock || match.clock || match.gameClock) !== null;
   const hasStartedPeriod = Number(match.period || 0) > 0;
-  const isShootoutOrExtra = /extra|prorroga|penalt|pênalt/i.test(String(match.status || ''));
+  const isShootoutOrExtra = /extra|prorroga|penalt|pênalt/i.test(String(match.status || '') + ' ' + state);
 
-  // Proteção contra falso AO VIVO: se a partida é de outra data ou está muito longe
-  // do horário oficial, não tratamos como ao vivo mesmo que uma fonte genérica
-  // retorne status errado. Isso corrige jogos futuros marcados como 0 x 0 AO VIVO.
   if (Number.isFinite(minutes)) {
     if (minutes > 30) return false;
     if (minutes < -360 && !isShootoutOrExtra) return false;
   }
 
-  return hasOfficialClock || hasStartedPeriod || isShootoutOrExtra || (Number.isFinite(minutes) && minutes <= 30 && minutes >= -360);
+  return hasOfficialClock || hasStartedPeriod || isShootoutOrExtra;
 }
 
 function hasDefinedTeams(match) {
@@ -1144,9 +1167,10 @@ function normalizeEspnEvent(event) {
   const home = competitors.find(c => c.homeAway === 'home');
   const away = competitors.find(c => c.homeAway === 'away');
   if (!home || !away) return null;
-  const statusName = competition.status?.type?.description || event.status?.type?.description || 'Agendado';
-  const statusDetail = competition.status?.type?.detail || event.status?.type?.detail || statusName;
-  const completed = competition.status?.type?.completed || /final|complete|encerrado/i.test(statusName);
+  const statusType = competition.status?.type || event.status?.type || {};
+  const statusName = statusType.description || 'Agendado';
+  const statusDetail = statusType.detail || statusName;
+  const completed = Boolean(statusType.completed) || /final|complete|encerrado/i.test(statusName);
   return {
     id: event.id,
     date: event.date,
@@ -1156,6 +1180,10 @@ function normalizeEspnEvent(event) {
     homeScore: home.score !== undefined && home.score !== '' ? Number(home.score) : undefined,
     awayScore: away.score !== undefined && away.score !== '' ? Number(away.score) : undefined,
     status: completed ? 'Finalizado' : translateStatus(statusDetail),
+    statusState: statusType.state || '',
+    statusCode: statusType.name || statusType.shortDetail || '',
+    statusName,
+    statusDetail,
     venue: competition.venue?.fullName || competition.venue?.displayName || '',
     clock: competition.status?.displayClock || event.status?.displayClock || '',
     officialClock: competition.status?.displayClock || event.status?.displayClock || '',
@@ -1182,6 +1210,10 @@ async function fetchFootballDataMatches() {
     homeScore: Number.isInteger(m.score?.fullTime?.home) ? m.score.fullTime.home : undefined,
     awayScore: Number.isInteger(m.score?.fullTime?.away) ? m.score.fullTime.away : undefined,
     status: translateStatus(m.status),
+    statusState: /IN_PLAY|PAUSED/.test(String(m.status)) ? 'in' : (/FINISHED/.test(String(m.status)) ? 'post' : 'pre'),
+    statusCode: m.status || '',
+    statusName: m.status || '',
+    statusDetail: m.status || '',
     venue: m.venue || '',
     source: 'football-data.org'
   })).filter(m => m.home && m.away);
